@@ -1,5 +1,19 @@
-# Vue 3 + Vite
+# 依宇 yiyu
 
-This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+个人生活工具集(Vue 3 + TypeScript + Vite):门户 + 记账本(💰 多账本记账 + 报表)+ 记事本(📝 富文本笔记 + 待办提醒)。纯前端 mock 实现,数据存内存,刷新重置。
 
-Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
+## 命令
+
+```bash
+pnpm install
+pnpm dev        # 开发
+pnpm build      # vue-tsc 类型检查 + vite 生产构建
+```
+
+## 结构
+
+- `src/modules/<name>/` —— 按子应用划分:auth(登录注册)/ portal(门户)/ ledger(记账本)/ notes(记事本)/ settings(设置),每个模块自持 types、mock、stores、routes、views
+- `src/shared/` —— 跨模块共享:布局、通用组件、用户/主题 store、设计 tokens
+- 路由:`src/router/index.ts` 汇总各模块导出的路由表
+
+详见根目录 `CLAUDE.md` 与 `docs/记账本|记事本/需求设计.md`。
