@@ -23,9 +23,9 @@ function normalizeTx(t: TransactionDto): Transaction {
   return { ...t, note: t.note ?? undefined }
 }
 
-/** 拉取全部基础数据(登录后/进入应用时调用一次) */
+/** 拉取全部基础数据(进入记账本应用时调用;已加载/加载中则跳过,应用内多页共享一次) */
   async function init() {
-    if (loading.value) return
+    if (loaded.value || loading.value) return
     loading.value = true
     try {
       const [bookList, expenseCats, incomeCats] = await Promise.all([

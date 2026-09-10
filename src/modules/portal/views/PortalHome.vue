@@ -1,14 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { portalApi } from '@/shared/api'
+import type { PortalSummaryDto } from '@/shared/api'
 import { useUserStore } from '@/shared/stores/user'
-import { useLedgerStore } from '@/modules/ledger/stores/ledger'
-import { nowYM } from '@/shared/types/common'
 
 const userStore = useUserStore()
-const ledgerStore = useLedgerStore()
 
-onMounted(() => {
-  ledgerStore.init().catch(() => {})
+/* 广场摘要:只拉门户卡片数据,应用内数据进应用时才加载 */
+const summary = ref<PortalSummaryDto['apps']['ledger'] | null>(null)
+onMounted(async () => {
+  try {
+    const res = await portalApi.summary()
+    summary.value = res.apps.ledger
+  } catch {
+    summary.value = null // 拉取失败保持占位,不打断门户
+  }
 })
 
 /* 问候(真实时钟) */
@@ -16,9 +22,6 @@ const now = new Date()
 const greeting = now.getHours() < 6 ? '夜深了' : now.getHours() < 11 ? '早上好' : now.getHours() < 14 ? '中午好' : now.getHours() < 18 ? '下午好' : '晚上好'
 const dateText = `${now.getFullYear()} 年 ${now.getMonth() + 1} 月 ${now.getDate()} 日 · 星期${'日一二三四五六'[now.getDay()]}`
 const dailyQuote = '把日子过成自己喜欢的样子,是一件值得练习的事。'
-
-/* 应用摘要数据(本月统计;ledger 数据未加载完成时显示占位 0) */
-const monthStats = computed(() => ledgerStore.monthStats(nowYM()))
 
 interface AppEntry { label: string; value: string; cls: string }
 interface AppCard {
@@ -34,13 +37,13 @@ interface AppCard {
 const apps = computed<AppCard[]>(() => [
   {
     key: 'ledger',
-    icon: '💰',
+    icon: summary.value?.bookIcon || '💰',
     name: '记账本',
-    sub: '把每一笔都记得清楚',
+    sub: summary.value?.bookName || '把每一笔都记得清楚',
     color: 'var(--app-ledger)',
     entries: [
-      { label: '本月支出', value: `¥ ${monthStats.value.expense.toFixed(0)}`, cls: 'money-out' },
-      { label: '结余', value: `¥ ${monthStats.value.balance.toFixed(0)}`, cls: 'money-in' },
+      { label: '本月支出', value: `¥ ${(summary.value?.monthExpense ?? 0).toFixed(0)}`, cls: 'money-out' },
+      { label: '结余', value: `¥ ${(summary.value?.monthBalance ?? 0).toFixed(0)}`, cls: 'money-in' },
     ],
     to: '/ledger/transactions',
   },
@@ -86,7 +89,7 @@ const apps = computed<AppCard[]>(() => [
         <div class="app-card-data">
           <div v-for="e in a.entries" :key="e.label" class="entry">
             <span class="entry-label">{{ e.label }}</span>
-            <span class="entry-value num" :class="e.cls">{{ ledgerStore.loaded ? e.value : '— —' }}</span>
+            <span class="entry-value num" :class="e.cls">{{ summary ? e.value : '— —' }}</span>
           </div>
         </div>
       </div>

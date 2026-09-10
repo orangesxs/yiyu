@@ -96,6 +96,24 @@ export const ledgerApi = {
   removeTransaction: (id: string) => del<{ ok: boolean }>(`/transactions/${id}`),
 }
 
+/* ── 广场门户(登录落地页应用卡摘要) ── */
+
+export interface PortalSummaryDto {
+  apps: {
+    ledger: {
+      bookName: string
+      bookIcon: string
+      monthExpense: number
+      monthIncome: number
+      monthBalance: number
+    }
+  }
+}
+
+export const portalApi = {
+  summary: () => get<PortalSummaryDto>('/portal/summary'),
+}
+
 /* ── 管理后台 ── */
 
 export interface SystemUserDto {
