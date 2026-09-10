@@ -32,16 +32,23 @@ export const useUserStore = defineStore('user', () => {
     user.value = res.user
   }
 
-  /** 应用启动时恢复登录态:有 token 则拉 me(403 停用等由请求层统一弹提示清态) */
-  async function fetchMe() {
-    if (getToken()) {
-      try {
-        user.value = await authApi.me()
-      } catch {
-        user.value = null
-      }
+  /** 应用启动时恢复登录态:有 token 则拉 me(403 停用等由请求层统一弹提示清态)。
+   *  进行中的 Promise 会缓存:main.ts 与路由守卫并发调用时共享同一次请求 */
+  let mePromise: Promise<void> | null = null
+  function fetchMe(): Promise<void> {
+    if (!mePromise) {
+      mePromise = (async () => {
+        if (getToken()) {
+          try {
+            user.value = await authApi.me()
+          } catch {
+            user.value = null
+          }
+        }
+        ready.value = true
+      })()
     }
-    ready.value = true
+    return mePromise
   }
 
   /** 退出:调后端记日志,本地清态(旧 yiyu-user 一并清理,兼容迁移) */
