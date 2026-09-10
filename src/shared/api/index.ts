@@ -27,7 +27,7 @@ export const profileApi = {
     put<{ ok: boolean }>('/profile/password', data),
 }
 
-/* ── 邀请码(我的) ── */
+/* ── 邀请码(我的,档案域) ── */
 
 export interface InviteCodeItem {
   id: string
@@ -38,8 +38,8 @@ export interface InviteCodeItem {
 }
 
 export const inviteApi = {
-  listMine: () => get<InviteCodeItem[]>('/invite-codes'),
-  create: () => post<InviteCodeItem>('/invite-codes'),
+  listMine: () => get<InviteCodeItem[]>('/profile/invite-codes'),
+  create: () => post<InviteCodeItem>('/profile/invite-codes'),
 }
 
 /* ── 记账本 ── */
@@ -80,20 +80,49 @@ export interface NewTransactionInput {
   bookId?: string
 }
 
+/** 流水分页结果(服务端分页) */
+export interface TransactionPage {
+  total: number
+  page: number
+  pageSize: number
+  items: TransactionDto[]
+}
+
+/** 报表聚合结果(服务端计算,单账本区间内) */
+export interface LedgerReportDto {
+  stats: { income: number; expense: number; balance: number; count: number }
+  /** 按日聚合(区间 ≤ 92 天时返回) */
+  daily: { date: string; income: number; expense: number }[]
+  /** 按月聚合 */
+  monthly: { month: string; income: number; expense: number }[]
+  /** 分类聚合(子分类归并到根分类,倒序) */
+  categories: {
+    expense: { name: string; value: number }[]
+    income: { name: string; value: number }[]
+  }
+}
+
 export const ledgerApi = {
-  listBooks: () => get<BookDto[]>('/books'),
-  createBook: (data: { name: string; icon: string }) => post<BookDto>('/books', data),
+  listBooks: () => get<BookDto[]>('/ledger/books'),
+  createBook: (data: { name: string; icon: string }) => post<BookDto>('/ledger/books', data),
   listCategories: (type?: 'expense' | 'income') =>
-    get<CategoryDto[]>('/categories', type ? { type } : undefined),
+    get<CategoryDto[]>('/ledger/categories', type ? { type } : undefined),
   createCategory: (data: { type: 'expense' | 'income'; name: string; icon: string }) =>
-    post<CategoryDto>('/categories', data),
-  removeCategory: (id: string) => del<{ ok: boolean }>(`/categories/${id}`),
-  listTransactions: (params: { bookId: string; from?: string; to?: string }) =>
-    get<TransactionDto[]>('/transactions', params),
-  createTransaction: (data: NewTransactionInput) => post<TransactionDto>('/transactions', data),
+    post<CategoryDto>('/ledger/categories', data),
+  removeCategory: (id: string) => del<{ ok: boolean }>(`/ledger/categories/${id}`),
+  listTransactions: (params: {
+    bookId: string
+    from?: string
+    to?: string
+    page?: number
+    pageSize?: number
+  }) => get<TransactionPage>('/ledger/transactions', params),
+  createTransaction: (data: NewTransactionInput) => post<TransactionDto>('/ledger/transactions', data),
   updateTransaction: (id: string, data: Partial<NewTransactionInput>) =>
-    patch<TransactionDto>(`/transactions/${id}`, data),
-  removeTransaction: (id: string) => del<{ ok: boolean }>(`/transactions/${id}`),
+    patch<TransactionDto>(`/ledger/transactions/${id}`, data),
+  removeTransaction: (id: string) => del<{ ok: boolean }>(`/ledger/transactions/${id}`),
+  reports: (params: { bookId: string; from: string; to: string }) =>
+    get<LedgerReportDto>('/ledger/reports', params),
 }
 
 /* ── 广场门户(登录落地页应用卡摘要) ── */

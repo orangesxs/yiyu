@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { PieChart, LineChart, BarChart, ScatterChart } from 'echarts/charts'
@@ -9,13 +9,14 @@ import {
 } from 'echarts/components'
 import VChart from 'vue-echarts'
 import { useLedgerStore } from '../stores/ledger'
-import type { TxType, Transaction } from '../types'
+import type { LedgerReportDto } from '@/shared/api'
 
 use([CanvasRenderer, PieChart, LineChart, BarChart, ScatterChart, GridComponent, TooltipComponent, LegendComponent, VisualMapComponent, CalendarComponent])
 
 const store = useLedgerStore()
 onMounted(() => {
   store.init().catch(() => {})
+  refresh()
 })
 /** 今日(真实时钟,报表区间推导的锚点) */
 const today = new Date()
@@ -30,7 +31,6 @@ const offset = ref(0)
 const bookId = ref(store.currentBookId)
 const bookOptions = computed(() => store.books)
 const activeBook = computed(() => store.books.find((b) => b.id === bookId.value))
-const scopedTx = computed<Transaction[]>(() => store.transactions.filter((t) => t.bookId === bookId.value))
 
 function pad(n: number) { return n < 10 ? '0' + n : '' + n }
 function ymd(d: Date) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) }
@@ -76,19 +76,52 @@ function stepRange(dir: number) {
   offset.value += dir
 }
 
-/* ---- 统计 ---- */
+/* ---- 统计(服务端 reports 接口;本期 + 上期 + 全量共三份) ---- */
+const report = ref<LedgerReportDto | null>(null)
+const prevReport = ref<LedgerReportDto | null>(null)
+const bookTotalReport = ref<LedgerReportDto | null>(null)
+const reportLoading = ref(false)
+
+async function fetchRange(r: DateRange): Promise<LedgerReportDto> {
+  return store.fetchReports(ymd(r.start), ymd(r.end), bookId.value)
+}
+async function refresh() {
+  if (!bookId.value) return
+  reportLoading.value = true
+  try {
+    const [cur, prev] = await Promise.all([
+      fetchRange(curRange.value),
+      // 上期对照仅在本期(offset=0)展示
+      offset.value === 0 ? fetchRange(prevRange.value) : Promise.resolve(null),
+    ])
+    report.value = cur
+    prevReport.value = prev
+  } catch {
+    /* 请求层已提示;报表保持上次数据 */
+  } finally {
+    reportLoading.value = false
+  }
+}
+/* 账本全量总计(不随时间段变化):从今年 1 月 1 日到今日的区间聚合 */
+async function refreshBookTotal() {
+  if (!bookId.value) return
+  try {
+    bookTotalReport.value = await store.fetchReports(
+      `${today.getFullYear()}-01-01`, ymd(today), bookId.value,
+    )
+  } catch {
+    /* 忽略 */
+  }
+}
+refreshBookTotal()
+watch(bookId, () => refreshBookTotal())
+
+watch([type, range, offset, bookId], () => refresh())
+
 interface Stats { income: number; expense: number; balance: number; count: number }
-function statsOf(list: Transaction[]): Stats {
-  const income = list.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-  const expense = list.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
-  return { income, expense, balance: income - expense, count: list.length }
-}
-function slice(r: DateRange): Transaction[] {
-  const a = ymd(r.start), b = ymd(r.end)
-  return scopedTx.value.filter((t) => { const d = t.date.slice(0, 10); return d >= a && d <= b })
-}
-const stats = computed(() => statsOf(slice(curRange.value)))
-const prevStats = computed(() => statsOf(slice(prevRange.value)))
+const emptyStats: Stats = { income: 0, expense: 0, balance: 0, count: 0 }
+const stats = computed<Stats>(() => report.value?.stats ?? emptyStats)
+const prevStats = computed<Stats>(() => prevReport.value?.stats ?? emptyStats)
 function pct(cur: number, prev: number): number | null {
   if (!prev) return null
   return Math.round(((cur - prev) / prev) * 100)
@@ -122,26 +155,28 @@ const avgText = computed(() => {
 })
 
 /* 总计(当前账本全部流水,不随时间段变化) */
-const bookTotal = computed(() => statsOf(scopedTx.value))
+const bookTotal = computed<Stats>(() => bookTotalReport.value?.stats ?? emptyStats)
 
 /* ---- 趋势图(周/月=按日,年=按月;total=收支相抵单线) ---- */
-type DayAgg = { income: number; expense: number }
-function dayAgg(r: DateRange): Record<string, DayAgg> {
-  const byDay: Record<string, DayAgg> = {}
-  for (const t of slice(r)) {
-    const d = t.date.slice(0, 10)
-    if (!byDay[d]) byDay[d] = { income: 0, expense: 0 }
-    byDay[d][t.type === 'income' ? 'income' : 'expense'] += t.amount
+/* 服务端 daily/monthly → 视图序列(补齐区间内每一天/每一月为 0) */
+function dailySeries(r: DateRange, src: LedgerReportDto | null): number[] {
+  const byDay = new Map(src?.daily.map((d) => [d.date, d]) ?? [])
+  const days: number[] = []
+  for (let d = new Date(r.start); d <= r.end; d.setDate(d.getDate() + 1)) {
+    const a = byDay.get(ymd(d)) ?? { income: 0, expense: 0 }
+    const v = isTotal.value ? a.income - a.expense : a[typeKey.value as 'income' | 'expense']
+    days.push(+v.toFixed(2))
   }
-  return byDay
+  return days
 }
-function monthAgg(r: DateRange): { income: number; expense: number }[] {
-  const byMonth = Array.from({ length: 12 }, () => ({ income: 0, expense: 0 }))
-  for (const t of slice(r)) {
-    const i = +t.date.slice(5, 7) - 1
-    byMonth[i][t.type === 'income' ? 'income' : 'expense'] += t.amount
-  }
-  return byMonth
+function monthlySeries(year: number, src: LedgerReportDto | null): number[] {
+  const byMonth = new Map(src?.monthly.map((m) => [m.month, m]) ?? [])
+  return Array.from({ length: 12 }, (_, i) => {
+    const key = `${year}-${pad(i + 1)}`
+    const a = byMonth.get(key) ?? { income: 0, expense: 0 }
+    const v = isTotal.value ? a.income - a.expense : a[typeKey.value as 'income' | 'expense']
+    return +v.toFixed(2)
+  })
 }
 
 interface TrendSeries {
@@ -164,22 +199,17 @@ const trendOption = computed(() => {
   let labels: string[] = [], main: number[] = [], other: number[] | null = null
 
   if (range.value === 'year') {
-    const cur = monthAgg(curRange.value)
-    const prev = offset.value !== 0 ? null : monthAgg({ start: new Date(today.getFullYear() - 1, 0, 1), end: new Date(today.getFullYear() - 1, 11, 31) })
-    labels = cur.map((_, i) => `${i + 1}月`)
-    const keyOf = (m: DayAgg) => (isTotal.value ? m.income - m.expense : m[typeKey.value as 'income' | 'expense'])
-    main = cur.map(keyOf)
-    other = prev ? prev.map(keyOf) : null
+    const year = curRange.value.start.getFullYear()
+    labels = Array.from({ length: 12 }, (_, i) => `${i + 1}月`)
+    main = monthlySeries(year, report.value)
+    if (offset.value === 0) other = monthlySeries(year - 1, prevReport.value)
   } else {
     const { start, end } = curRange.value
-    const cur = dayAgg(curRange.value)
-    const prev = offset.value !== 0 ? null : dayAgg(prevRange.value)
     const days: string[] = []
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) days.push(ymd(d))
     labels = days.map((k) => k.slice(5))
-    const keyOf = (o: Record<string, DayAgg>, k: string) => { const d = o[k] || { income: 0, expense: 0 }; return +(isTotal.value ? d.income - d.expense : d[typeKey.value as 'income' | 'expense']).toFixed(2) }
-    main = days.map((k) => keyOf(cur, k))
-    other = prev ? days.map((k) => keyOf(prev, k)) : null
+    main = dailySeries(curRange.value, report.value)
+    if (offset.value === 0) other = dailySeries(prevRange.value, prevReport.value)
   }
 
   const series: TrendSeries[] = [{
@@ -193,7 +223,7 @@ const trendOption = computed(() => {
     areaStyle: { opacity: isTotal.value ? 0 : 0.12 },
     color: isTotal.value ? '#7C6AF0' : type.value === 'income' ? cIn : cOut,
   }]
-  // 本期视图追加上一期对照虚线
+  // 本期视图追加上一期对照虚线(服务端已按上期区间真实取数)
   if (other) {
     series.push({
       name: '上期',
@@ -223,31 +253,20 @@ const trendPeak = computed(() => {
   return Math.max(...data.map((v) => Math.abs(v || 0)))
 })
 
-/* ---- 分类占比 + 排行(total 模式下收支并列展示) ---- */
+/* ---- 分类占比 + 排行(total 模式下收支并列展示;服务端已归并根分类) ---- */
 interface CatItem { name: string; value: number; kind: 'expense' | 'income'; kindLabel?: string }
 
-function catOf(typeName: TxType): { name: string; value: number }[] {
-  const list = slice(curRange.value).filter((t) => t.type === typeName)
-  const byRoot: Record<string, number> = {}
-  for (const t of list) {
-    const pool = store.categories[typeName]
-    const root = pool.find((c) => c.children.some((ch) => ch.id === t.categoryId) || c.id === t.categoryId)
-    const name = root ? root.name : t.categoryName || '其他'
-    byRoot[name] = (byRoot[name] || 0) + t.amount
-  }
-  return Object.entries(byRoot)
-    .map(([name, value]) => ({ name, value: +value.toFixed(2) }))
-    .sort((a, b) => b.value - a.value)
-}
 const catData = computed<CatItem[]>(() => {
+  const cats = report.value?.categories
   if (isTotal.value) {
-    const e = catOf('expense'), i = catOf('income')
+    const e = cats?.expense ?? [], i = cats?.income ?? []
     return [
       ...e.map((c) => ({ ...c, kind: 'expense' as const })),
       ...i.map((c) => ({ ...c, kind: 'income' as const })),
     ].sort((a, b) => b.value - a.value)
   }
-  return catOf(type.value as TxType).map((c) => ({ ...c, kind: type.value as 'expense' | 'income' }))
+  const list = type.value === 'income' ? cats?.income : cats?.expense
+  return (list ?? []).map((c) => ({ ...c, kind: type.value as 'expense' | 'income' }))
 })
 
 const paletteExpense = ['#E5484D', '#F59B0E', '#EC4899', '#C2410C', '#A855F7', '#EF4444', '#F97316', '#B45309']
@@ -278,16 +297,16 @@ function lgColor(c: CatItem, i: number) { return colorOf(c, i) }
 const catTotal = computed(() => catData.value.reduce((s, c) => s + c.value, 0))
 const catCount = computed(() => catData.value.length)
 
-/* 分类排行(横向条形,total 模式收/支各取前 6) */
+/* 分类排行(横向条形,total 模式收/支各取前 6;数据同 catData,服务端已归并) */
 const rankRows = computed<CatItem[]>(() => {
   if (!isTotal.value) return catData.value.slice(0, 8).map((c) => ({ ...c, kindLabel: '' }))
-  const e = catOf('expense').slice(0, 6).map((c) => ({ ...c, kind: 'expense' as const, kindLabel: '支' }))
-  const i = catOf('income').slice(0, 6).map((c) => ({ ...c, kind: 'income' as const, kindLabel: '收' }))
+  const e = (report.value?.categories.expense ?? []).slice(0, 6).map((c) => ({ ...c, kind: 'expense' as const, kindLabel: '支' }))
+  const i = (report.value?.categories.income ?? []).slice(0, 6).map((c) => ({ ...c, kind: 'income' as const, kindLabel: '收' }))
   return [...e, ...i].sort((a, b) => b.value - a.value)
 })
 const rankMax = computed(() => rankRows.value[0]?.value || 1)
 
-/* ---- 收支日历:周=近 7 天条 / 月=整月热力 / 年=12 月格 ---- */
+/* ---- 收支日历:周=近 7 天条 / 月=整月热力 / 年=12 月格(数据来自服务端聚合) ---- */
 interface CalCell {
   key: string
   label: string
@@ -300,23 +319,30 @@ interface CalCell {
   monthCell?: boolean
 }
 
+/* 服务端 daily → 按日期索引 */
+const dailyMap = computed(() => new Map((report.value?.daily ?? []).map((d) => [d.date, d])))
+const monthlyMap = computed(() => new Map((report.value?.monthly ?? []).map((m) => [m.month, m])))
+
 const calCells = computed<(CalCell | null)[]>(() => {
   if (range.value === 'year') {
     const y = curRange.value.start.getFullYear()
-    return monthAgg(curRange.value).map((m, i) => ({
-      key: y + '-' + pad(i + 1),
-      label: i + 1 + '月',
-      foot: y + ' 年 ' + (i + 1) + ' 月',
-      income: +m.income.toFixed(2),
-      expense: +m.expense.toFixed(2),
-      net: +(m.income - m.expense).toFixed(2),
-      isToday: y === today.getFullYear() && i === today.getMonth(),
-      monthCell: true,
-    }))
+    return Array.from({ length: 12 }, (_, i) => {
+      const key = `${y}-${pad(i + 1)}`
+      const m = monthlyMap.value.get(key) ?? { income: 0, expense: 0 }
+      return {
+        key,
+        label: i + 1 + '月',
+        foot: y + ' 年 ' + (i + 1) + ' 月',
+        income: +m.income.toFixed(2),
+        expense: +m.expense.toFixed(2),
+        net: +(m.income - m.expense).toFixed(2),
+        isToday: y === today.getFullYear() && i === today.getMonth(),
+        monthCell: true,
+      }
+    })
   }
   if (range.value === 'month') {
     const { start } = curRange.value
-    const agg = dayAgg(curRange.value)
     const cells: (CalCell | null)[] = []
     for (let i = 0; i < start.getDay(); i++) cells.push(null) // 周日开头补位
     const daysInMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate()
@@ -327,7 +353,7 @@ const calCells = computed<(CalCell | null)[]>(() => {
         continue
       }
       const k = ymd(d)
-      const a = agg[k] || { income: 0, expense: 0 }
+      const a = dailyMap.value.get(k) ?? { income: 0, expense: 0 }
       cells.push({
         key: k,
         label: String(dom),
@@ -342,11 +368,10 @@ const calCells = computed<(CalCell | null)[]>(() => {
   }
   /* week:滚动近 7 天 */
   const { start, end } = curRange.value
-  const agg = dayAgg(curRange.value)
   const cells: (CalCell | null)[] = []
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const k = ymd(d)
-    const a = agg[k] || { income: 0, expense: 0 }
+    const a = dailyMap.value.get(k) ?? { income: 0, expense: 0 }
     cells.push({
       key: k,
       label: d.getMonth() + 1 + '/' + d.getDate(),

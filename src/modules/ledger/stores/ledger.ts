@@ -1,15 +1,17 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { ledgerApi } from '@/shared/api'
-import type { TransactionDto } from '@/shared/api'
-import type { Book, Category, DailyTotal, RangeStats, Transaction, TxType } from '../types'
+import type { LedgerReportDto, TransactionDto } from '@/shared/api'
+import type { Book, Category, Transaction, TxType } from '../types'
 
 /**
- * 记账本数据源:books/categories/transactions 全部来自后端 API,
- * CRUD 调 API 成功后本地同步;报表聚合(monthStats/dailyTotals/…)仍是客户端计算。
+ * 记账本数据源:books/categories 来自后端 API;流水分页拉取(服务端分页),
+ * 报表聚合走 /ledger/reports 服务端计算——前端不再全量拉流水自算统计。
  */
 export const useLedgerStore = defineStore('ledger', () => {
+  /* 当前账本流水(当前已加载的分页页集合,倒序追加) */
   const transactions = ref<Transaction[]>([])
+  const txTotal = ref(0)
   const books = ref<Book[]>([])
   const currentBookId = ref('')
   /* loaded:首次加载完成(为 false 时视图可显示空态而非误导性的"无记录") */
@@ -19,11 +21,12 @@ export const useLedgerStore = defineStore('ledger', () => {
   const categories = ref<Record<TxType, Category[]>>({ expense: [], income: [] })
 
   /** 服务端 DTO → 前端 Transaction(note null 归一为 undefined,类型兼容) */
-function normalizeTx(t: TransactionDto): Transaction {
-  return { ...t, note: t.note ?? undefined }
-}
+  function normalizeTx(t: TransactionDto): Transaction {
+    return { ...t, note: t.note ?? undefined }
+  }
 
-/** 拉取全部基础数据(进入记账本应用时调用;已加载/加载中则跳过,应用内多页共享一次) */
+  /** 拉取基础数据(进入记账本应用时调用;已加载/加载中则跳过,应用内多页共享一次)。
+   *  流水不在此拉:流水按视图需求加载(Transactions 页按月分页),报表走 /ledger/reports */
   async function init() {
     if (loaded.value || loading.value) return
     loading.value = true
@@ -39,15 +42,48 @@ function normalizeTx(t: TransactionDto): Transaction {
       if (!currentBookId.value || !bookList.some((b) => b.id === currentBookId.value)) {
         currentBookId.value = bookList.find((b) => b.isDefault)?.id || bookList[0]?.id || ''
       }
-      /* 流水:当前账本全量(个人量级,聚合留前端) */
-      if (currentBookId.value) {
-        transactions.value = (await ledgerApi.listTransactions({ bookId: currentBookId.value })).map(normalizeTx)
-      }
       loaded.value = true
     } finally {
       loading.value = false
     }
   }
+
+  /** 当前流水列表所处的月份视图('' = 无月份过滤的全量分页) */
+  const monthQuery = ref('')
+
+  /** 分页拉取当前账本流水(无月份过滤;page=1 重置,>1 追加) */
+  async function loadTransactions(page = 1) {
+    if (!currentBookId.value) return
+    const res = await ledgerApi.listTransactions({ bookId: currentBookId.value, page, pageSize: 50 })
+    txTotal.value = res.total
+    monthQuery.value = ''
+    if (page === 1) transactions.value = res.items.map(normalizeTx)
+    else {
+      const seen = new Set(transactions.value.map((t) => t.id))
+      transactions.value.push(...res.items.map(normalizeTx).filter((t) => !seen.has(t.id)))
+    }
+  }
+
+  /** 按月拉取流水(Transactions 页月份视图):重置为该月第一页 */
+  async function loadMonthTransactions(ym: string, page = 1) {
+    if (!currentBookId.value) return
+    const [y, m] = ym.split('-').map(Number)
+    const lastDay = new Date(y, m, 0).getDate()
+    const pad = (n: number) => (n < 10 ? '0' + n : '' + n)
+    const res = await ledgerApi.listTransactions({
+      bookId: currentBookId.value, from: `${ym}-01`, to: `${ym}-${pad(lastDay)}`, page, pageSize: 50,
+    })
+    txTotal.value = res.total
+    monthQuery.value = ym
+    if (page === 1) transactions.value = res.items.map(normalizeTx)
+    else {
+      const seen = new Set(transactions.value.map((t) => t.id))
+      transactions.value.push(...res.items.map(normalizeTx).filter((t) => !seen.has(t.id)))
+    }
+  }
+
+  /** 当前列表之外还有下一页吗 */
+  const hasMore = computed(() => transactions.value.length < txTotal.value)
 
   /* 新增自定义分类(后端去重),成功后返回新分类 id */
   async function addCustomCategory(type: TxType, name: string, icon: string): Promise<string> {
@@ -62,47 +98,17 @@ function normalizeTx(t: TransactionDto): Transaction {
     if (i > -1 && pool[i].custom) pool.splice(i, 1)
   }
 
-  /* 当前账本流水 */
-  const bookTransactions = computed(() =>
-    transactions.value.filter((t) => t.bookId === currentBookId.value)
-  )
-
-  /* 月度统计 */
-  function monthStats(ym: string): RangeStats {
-    return rangeStats((t) => t.date.startsWith(ym))
+  /* 区间报表(服务端聚合):from/to 为 'YYYY-MM-DD' */
+  async function fetchReports(from: string, to: string, bookId?: string): Promise<LedgerReportDto> {
+    return ledgerApi.reports({ bookId: bookId || currentBookId.value, from, to })
   }
 
-  /* 通用区间统计(报表 周/月/年 用) */
-  function rangeStats(matchFn: (t: Transaction) => boolean): RangeStats {
-    const list = bookTransactions.value.filter(matchFn)
-    const income = list.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-    const expense = list.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
-    return { income, expense, balance: income - expense, count: list.length }
-  }
-
-  /* 按日聚合(报表 周/月 趋势用):返回 [{key:'09-01', income, expense}] */
-  function dailyTotals(fromYmd: string, toYmd: string): DailyTotal[] {
-    const map: Record<string, { key: string; income: number; expense: number }> = {}
-    for (const t of bookTransactions.value) {
-      const d = t.date.slice(0, 10)
-      if (d < fromYmd || d > toYmd) continue
-      if (!map[d]) map[d] = { key: d.slice(5), income: 0, expense: 0 }
-      if (t.type === 'income') map[d].income += t.amount
-      if (t.type === 'expense') map[d].expense += t.amount
-    }
-    return Object.keys(map).sort().map((k) => ({
-      key: map[k].key,
-      income: +map[k].income.toFixed(2),
-      expense: +map[k].expense.toFixed(2),
-    }))
-  }
-
-  /* 按天分组 */
+  /* 按天分组(列表展示用,纯展示逻辑非统计聚合) */
   interface DayGroup { day: string; items: Transaction[]; expense: number; income: number }
   const groupedByDay = computed<DayGroup[]>(() => {
     const groups: DayGroup[] = []
     let cur: DayGroup | null = null
-    for (const t of bookTransactions.value) {
+    for (const t of transactions.value) {
       const day = t.date.slice(0, 10)
       if (!cur || cur.day !== day) {
         cur = { day, items: [], expense: 0, income: 0 }
@@ -115,24 +121,6 @@ function normalizeTx(t: TransactionDto): Transaction {
     return groups
   })
 
-  /* 分类统计(报表用,某月某类型) */
-  function categoryStats(ym: string, type: TxType = 'expense') {
-    const list = bookTransactions.value.filter(
-      (t) => t.date.startsWith(ym) && t.type === type
-    )
-    const byRoot: Record<string, number> = {}
-    for (const t of list) {
-      const root = categories.value[type].find((c) =>
-        c.children.some((ch) => ch.id === t.categoryId) || c.id === t.categoryId
-      )
-      const name = root ? root.name : t.categoryName
-      byRoot[name] = (byRoot[name] || 0) + t.amount
-    }
-    return Object.entries(byRoot)
-      .map(([name, value]) => ({ name, value: +value.toFixed(2) }))
-      .sort((a, b) => b.value - a.value)
-  }
-
   /* 操作(API 成功后本地同步) */
   async function addTransaction(t: Omit<Transaction, 'id' | 'bookId'> & { bookId?: string }) {
     const row = await ledgerApi.createTransaction({
@@ -144,6 +132,7 @@ function normalizeTx(t: TransactionDto): Transaction {
       bookId: t.bookId ?? currentBookId.value,
     })
     transactions.value.unshift({ ...t, bookId: row.bookId, id: row.id })
+    txTotal.value += 1
   }
   async function updateTransaction(id: string, patch: Partial<Transaction>) {
     const row = await ledgerApi.updateTransaction(id, {
@@ -156,12 +145,13 @@ function normalizeTx(t: TransactionDto): Transaction {
   async function removeTransaction(id: string) {
     await ledgerApi.removeTransaction(id)
     transactions.value = transactions.value.filter((t) => t.id !== id)
+    txTotal.value = Math.max(0, txTotal.value - 1)
   }
   async function switchBook(id: string) {
     if (id === currentBookId.value) return
     currentBookId.value = id
-    /* 切账本重拉该账本流水 */
-    transactions.value = (await ledgerApi.listTransactions({ bookId: id })).map(normalizeTx)
+    /* 切账本重拉该账本流水首页 */
+    await loadTransactions(1)
   }
   async function addBook(b: { name: string; icon: string }) {
     const row = await ledgerApi.createBook(b)
@@ -173,10 +163,10 @@ function normalizeTx(t: TransactionDto): Transaction {
   )
 
   return {
-    transactions, books, categories, loaded, loading,
-    currentBookId, currentBook, bookTransactions, groupedByDay,
-    monthStats, rangeStats, dailyTotals, categoryStats,
-    init, addTransaction, updateTransaction, removeTransaction,
+    transactions, txTotal, hasMore, books, categories, loaded, loading,
+    currentBookId, currentBook, groupedByDay,
+    init, loadTransactions, loadMonthTransactions, fetchReports,
+    addTransaction, updateTransaction, removeTransaction,
     switchBook, addBook, addCustomCategory, removeCustomCategory,
   }
 })

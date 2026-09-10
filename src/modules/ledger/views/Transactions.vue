@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted } from 'vue'
+import { ref, computed, reactive, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useLedgerStore } from '../stores/ledger'
 import { nowStr } from '@/shared/types/common'
+import type { LedgerReportDto } from '@/shared/api'
 import type { Transaction, TxType, Category } from '../types'
 
 const store = useLedgerStore()
@@ -23,14 +24,42 @@ function buildMonths(): string[] {
 }
 const month = ref(buildMonths()[0])
 const months = buildMonths()
-const stats = computed(() => store.monthStats(month.value))
+
+/* 当月汇总:服务端 reports 接口(前端不再全量自算) */
+const stats = ref<LedgerReportDto['stats']>({ income: 0, expense: 0, balance: 0, count: 0 })
+async function loadStats() {
+  const [y, m] = month.value.split('-').map(Number)
+  const last = new Date(y, m, 0).getDate()
+  try {
+    const r = await store.fetchReports(`${month.value}-01`, `${month.value}-${last < 10 ? '0' + last : last}`)
+    stats.value = r.stats
+  } catch {
+    /* 汇总失败不打断列表 */
+  }
+}
+
+/* 当月流水:服务端分页(按月区间过滤,首次 50 条,滚动到底加载更多) */
+const monthLoading = ref(false)
+async function loadMonth() {
+  if (!store.currentBookId) return
+  monthLoading.value = true
+  try {
+    await store.loadMonthTransactions(month.value)
+    await loadStats()
+  } finally {
+    monthLoading.value = false
+  }
+}
+/* 月份/账本任一变化即重载;immediate 兼首挂(init 就绪后 currentBookId 由 ''→id 也会触发) */
+watch([month, () => store.currentBookId], () => {
+  if (store.currentBookId) loadMonth()
+}, { immediate: true })
 
 /* 筛选 */
 const filters = reactive({ type: '' as '' | TxType, categoryId: '', keyword: '' })
 
 const filteredGroups = computed(() => {
   return store.groupedByDay
-    .filter((g) => g.day.startsWith(month.value))
     .map((g) => ({
       ...g,
       items: g.items.filter((t) => {
@@ -145,6 +174,7 @@ async function save() {
       ElMessage.success('已记一笔 ✓')
     }
     drawer.value = false
+    loadStats() // 汇总跟随刷新(不阻塞关抽屉)
   } catch {
     /* 校验错误由请求层提示,抽屉保留现场 */
   }
@@ -158,7 +188,13 @@ function removeRow(t: Transaction) {
   }).then(async () => {
     await store.removeTransaction(t.id)
     ElMessage.success('已删除')
+    loadStats()
   }).catch(() => {})
+}
+
+/* 当月加载更多(服务端分页下一页) */
+async function loadMore() {
+  await store.loadMonthTransactions(month.value, Math.floor(store.transactions.length / 50) + 1)
 }
 
 const weekNames = ['日', '一', '二', '三', '四', '五', '六']
@@ -247,10 +283,15 @@ function bookIcon(id: string) {
             <el-icon class="tx-more" title="删除" @click.stop="removeRow(t)"><Delete /></el-icon>
           </div>
         </div>
-        <div v-if="!filteredGroups.length" class="empty-box">
+        <div v-if="!filteredGroups.length && !monthLoading" class="empty-box">
           <span class="empty-icon">🧾</span>
           <p>这个月还没有记录</p>
           <el-button type="primary" plain @click="openDrawer">记第一笔</el-button>
+        </div>
+        <div v-if="store.hasMore && filteredGroups.length" class="load-more">
+          <el-button :loading="monthLoading" text type="primary" @click="loadMore">
+            加载更多(已载 {{ store.transactions.length }}/{{ store.txTotal }})
+          </el-button>
         </div>
       </div>
     </div>
@@ -480,6 +521,11 @@ function bookIcon(id: string) {
   padding: 60px 0;
   text-align: center;
   color: var(--text-secondary);
+}
+.load-more {
+  display: flex;
+  justify-content: center;
+  padding: 18px 0 30px;
 }
 .empty-icon { font-size: 40px; }
 .empty-box p { margin: 10px 0 16px; }
