@@ -21,8 +21,12 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const userStore = useUserStore()
+  // 启动恢复期(fetchMe 未完成)先等登录态就绪,避免刷新已登录页时闪跳登录页
+  if (!userStore.ready) {
+    await userStore.fetchMe()
+  }
   if (to.meta.requiresAuth && !userStore.user) {
     return { name: 'login' }
   }

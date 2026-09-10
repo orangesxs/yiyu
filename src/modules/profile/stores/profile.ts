@@ -1,28 +1,32 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { initialProfile } from '../mock/profile'
+import { profileApi } from '@/shared/api'
 import type { Profile } from '../types'
-import { useUserStore } from '@/shared/stores/user'
 
 /**
- * 个人中心:全站共享的用户档案唯一数据源。
- * 子应用不得自建用户资料副本。
+ * 个人中心:全站共享的用户档案唯一数据源(服务端 GET/PUT /profile)。
+ * 子应用不得自建用户资料副本;昵称/头像修改后需同步 userStore 展示层。
  */
 export const useProfileStore = defineStore('profile', () => {
-  const userStore = useUserStore()
+  /* 空档案占位(未加载完成前视图渲染兜底) */
+  const profile = ref<Profile>({
+    id: '', username: '', nickname: '', avatar: '',
+    bio: '', gender: 'secret', birthday: '', region: '',
+    joinedAt: '', updatedAt: '',
+  })
+  const loaded = ref(false)
 
-  const profile = ref<Profile>(initialProfile())
-
-  /** 保存档案:昵称/头像同步写回 yiyu-user(持久化),其余仅内存 */
-  function updateProfile(patch: Partial<Omit<Profile, 'id' | 'username'>>) {
-    profile.value = { ...profile.value, ...patch, updatedAt: '2026-09-07 09:00' }
-    if (patch.nickname !== undefined || patch.avatar !== undefined) {
-      userStore.updateProfile({
-        nickname: profile.value.nickname,
-        ...(patch.avatar !== undefined ? { avatar: profile.value.avatar } : {}),
-      })
-    }
+  /** 拉取档案(进入个人中心时调用) */
+  async function init() {
+    profile.value = await profileApi.get()
+    loaded.value = true
   }
 
-  return { profile, updateProfile }
+  /** 保存档案到服务端;返回更新后的档案(调用方负责同步 userStore 展示昵称/头像) */
+  async function updateProfile(patch: Partial<Omit<Profile, 'id' | 'username'>>) {
+    profile.value = await profileApi.update(patch)
+    return profile.value
+  }
+
+  return { profile, loaded, init, updateProfile }
 })

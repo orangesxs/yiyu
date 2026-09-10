@@ -1,27 +1,35 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useLedgerStore } from '../stores/ledger'
 import type { Book } from '../types'
 
 const store = useLedgerStore()
 
+onMounted(() => {
+  store.init().catch(() => {})
+})
+
 /* 新建账本 */
 const createVisible = ref(false)
 const form = reactive({ name: '', icon: '📘' })
 const icons = ['📘', '🏗️', '✈️', '🏡', '🎓', '🏥', '🚗', '💎', '🧾', '🎯']
 
-function createBook() {
+async function createBook() {
   if (!form.name.trim()) return ElMessage.warning('请输入账本名称')
-  store.addBook({ name: form.name.trim(), icon: form.icon })
-  createVisible.value = false
-  form.name = ''
-  ElMessage.success('账本已创建')
+  try {
+    await store.addBook({ name: form.name.trim(), icon: form.icon })
+    createVisible.value = false
+    form.name = ''
+    ElMessage.success('账本已创建')
+  } catch {
+    /* 校验错误由请求层提示 */
+  }
 }
 
-function selectBook(b: Book) {
+async function selectBook(b: Book) {
   if (b.id === store.currentBookId) return
-  store.switchBook(b.id)
+  await store.switchBook(b.id)
   ElMessage.success(`已切换到「${b.name}」`)
 }
 </script>

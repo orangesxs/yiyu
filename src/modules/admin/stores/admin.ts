@@ -1,68 +1,73 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
-import type { SystemUser, AdminLog, UserRole, UserStatus } from '../types'
-import { initialSystemUsers } from '../mock/users'
-import { initialLogs } from '../mock/logs'
+import { ref } from 'vue'
+import { adminApi } from '@/shared/api'
+import type { AdminDashboardDto, AdminLogDto, SystemUserDto } from '@/shared/api'
 
+/**
+ * 管理后台数据源:全部来自服务端 API。
+ * 统计/趋势/最近操作由 GET /admin/dashboard 一次性返回;用户目录与日志按需拉取。
+ */
 export const useAdminStore = defineStore('admin', () => {
-  const users = ref<SystemUser[]>(initialSystemUsers())
-  const logs = ref<AdminLog[]>(initialLogs())
+  const users = ref<SystemUserDto[]>([])
+  const usersLoaded = ref(false)
 
-  const userCount = computed(() => users.value.length)
-  const adminCount = computed(() => users.value.filter((u) => u.role === 'admin').length)
-  const activeCount = computed(() => users.value.filter((u) => u.status === 'active').length)
-  const disabledCount = computed(() => users.value.filter((u) => u.status === 'disabled').length)
+  /* 概览(dashboard 接口一次性返回统计卡/趋势/最近操作) */
+  const dashboard = ref<AdminDashboardDto | null>(null)
+  const dashboardLoaded = ref(false)
+
+  async function fetchDashboard() {
+    dashboard.value = await adminApi.dashboard()
+    dashboardLoaded.value = true
+  }
+
+  async function fetchUsers(params?: { keyword?: string; role?: string; status?: string }) {
+    users.value = await adminApi.listUsers(params)
+    usersLoaded.value = true
+  }
 
   /** 按 id 找系统用户(供日志列表显示操作人昵称/头像) */
-  function userById(id: string): SystemUser | null {
+  function userById(id: string): SystemUserDto | null {
     return users.value.find((u) => u.id === id) || null
   }
 
-  /** mock 简化:直接生成 u + 时间戳,与全站 ID 惯例一致 */
-  function addUser(u: { username: string; name: string; avatar: string; role: UserRole }) {
-    users.value.unshift({
-      ...u,
-      id: 'u' + Date.now(),
-      status: 'active',
-      registeredAt: '2026-09-07',
-      lastActiveAt: '2026-09-07 21:36',
-    })
+  /** 新增用户(管理员直接建号,不消耗邀请码) */
+  async function addUser(u: { username: string; name: string; avatar: string; role: 'admin' | 'user'; password: string }) {
+    await adminApi.createUser(u)
+    await fetchUsers()
   }
 
-  function setUserRole(id: string, role: UserRole) {
-    const u = users.value.find((x) => x.id === id)
-    if (u) u.role = role
+  async function setUserRole(id: string, role: 'admin' | 'user') {
+    await adminApi.updateUser(id, { role })
+    const target = users.value.find((x) => x.id === id)
+    if (target) target.role = role
   }
 
-  function setUserStatus(id: string, status: UserStatus) {
-    const u = users.value.find((x) => x.id === id)
-    if (u) u.status = status
+  async function setUserStatus(id: string, status: 'active' | 'disabled') {
+    await adminApi.updateUser(id, { status })
+    const target = users.value.find((x) => x.id === id)
+    if (target) target.status = status
   }
 
-  /** 日志总数(列表已按时间倒序存储) */
-  const logCount = computed(() => logs.value.length)
-  const logTodayCount = computed(() => logs.value.filter((l) => l.time.startsWith('2026-09-07')).length)
-  const logSecurityCount = computed(() => logs.value.filter((l) => l.action === 'security').length)
-
-  /** 最新 n 条日志(概览页「最近操作」) */
-  function latestLogs(n: number): AdminLog[] {
-    return logs.value.slice(0, n)
+  /** 日志列表(服务端分页;由 AdminLogs 页自行保存 items) */
+  async function fetchLogs(params: {
+    page?: number
+    pageSize?: number
+    module?: string
+    action?: string
+    operatorId?: string
+  }) {
+    return adminApi.listLogs(params)
   }
 
-  /** 近 7 日(09-01 ~ 09-07)每日日志条数,供概览页趋势柱状图 */
-  const logCountByDay = computed<{ label: string; count: number }[]>(() => {
-    const days: { label: string; count: number }[] = []
-    for (let d = 1; d <= 7; d++) {
-      const key = `2026-09-0${d}`
-      days.push({ label: `9/${d}`, count: logs.value.filter((l) => l.time.startsWith(key)).length })
-    }
-    return days
-  })
+  /** 操作人信息兜底:dashboard.latestLogs / 日志项自带 operator,无需查表 */
+  function operatorName(l: AdminLogDto): string {
+    return l.operator?.nickname || '未知用户'
+  }
 
   return {
-    users, logs,
-    userCount, adminCount, activeCount, disabledCount,
-    userById, addUser, setUserRole, setUserStatus,
-    logCount, logTodayCount, logSecurityCount, latestLogs, logCountByDay,
+    users, usersLoaded,
+    dashboard, dashboardLoaded,
+    fetchDashboard, fetchUsers, fetchLogs,
+    userById, addUser, setUserRole, setUserStatus, operatorName,
   }
 })

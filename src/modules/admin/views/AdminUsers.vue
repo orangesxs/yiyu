@@ -1,49 +1,40 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import { useUserStore } from '@/shared/stores/user'
 import { useAdminStore } from '../stores/admin'
 import { roleLabels, statusLabels, adminAvatarOptions } from '../types'
 import type { UserRole, UserStatus } from '../types'
+import type { SystemUserDto } from '@/shared/api'
 
 const userStore = useUserStore()
 const adminStore = useAdminStore()
 
-/* ---- 统计行 ---- */
+onMounted(refresh)
+function refresh() {
+  adminStore.fetchUsers().catch(() => {})
+}
+
+/* ---- 统计行(由用户目录即时汇总) ---- */
 const stats = computed(() => [
-  { label: '用户总数', value: adminStore.userCount },
-  { label: '管理员', value: adminStore.adminCount },
-  { label: '正常', value: adminStore.activeCount },
-  { label: '停用', value: adminStore.disabledCount },
+  { label: '用户总数', value: adminStore.users.length },
+  { label: '管理员', value: adminStore.users.filter((u) => u.role === 'admin').length },
+  { label: '正常', value: adminStore.users.filter((u) => u.status === 'active').length },
+  { label: '停用', value: adminStore.users.filter((u) => u.status === 'disabled').length },
 ])
 
-/* ---- 筛选(昵称/用户名 + 角色 + 状态) ---- */
+/* ---- 筛选(服务端筛选:昵称/用户名 + 角色 + 状态) ---- */
 const keyword = ref('')
 const roleFilter = ref<UserRole | ''>('')
 const statusFilter = ref<UserStatus | ''>('')
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+watch([keyword, roleFilter, statusFilter], () => {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(refresh, 300)
+})
 
-function filteredUsers(): SystemUserRow[] {
-  const kw = keyword.value.trim().toLowerCase()
-  return adminStore.users
-    .filter((u) => {
-      if (kw && !u.name.toLowerCase().includes(kw) && !u.username.toLowerCase().includes(kw)) return false
-      if (roleFilter.value && u.role !== roleFilter.value) return false
-      if (statusFilter.value && u.status !== statusFilter.value) return false
-      return true
-    })
-    .sort((a, b) => a.id.localeCompare(b.id))
-}
-interface SystemUserRow {
-  id: string
-  username: string
-  name: string
-  avatar: string
-  role: UserRole
-  status: UserStatus
-  registeredAt: string
-  lastActiveAt: string
-}
+const filteredUsers = computed<SystemUserDto[]>(() => adminStore.users)
 const hasFilter = computed(() => !!keyword.value.trim() || !!roleFilter.value || !!statusFilter.value)
 function clearFilters() {
   keyword.value = ''
@@ -51,36 +42,36 @@ function clearFilters() {
   statusFilter.value = ''
 }
 
-/** 当前登录人自己:不可自改角色/停用(与 Books.vue "admin 不可改自己"同一保护) */
-function isSelf(u: SystemUserRow): boolean {
+/** 当前登录人自己:不可自改角色/停用(与后端禁自改同一保护) */
+function isSelf(u: SystemUserDto): boolean {
   return u.id === userStore.user?.id
 }
 
-function toggleRole(u: SystemUserRow) {
+function toggleRole(u: SystemUserDto) {
   const toAdmin = u.role === 'user'
   ElMessageBox.confirm(
     toAdmin ? `确定将「${u.name}」设为管理员?Ta 将可以进入管理后台并管理全部用户与日志。` : `确定将「${u.name}」降为普通用户?Ta 将失去管理后台的访问权限。`,
     toAdmin ? '设为管理员' : '降为普通用户',
     { type: 'warning', confirmButtonText: '确定', cancelButtonText: '取消' },
   )
-    .then(() => {
-      adminStore.setUserRole(u.id, toAdmin ? 'admin' : 'user')
+    .then(async () => {
+      await adminStore.setUserRole(u.id, toAdmin ? 'admin' : 'user')
       ElMessage.success(toAdmin ? `已将「${u.name}」设为管理员` : `已将「${u.name}」降为普通用户`)
     })
     .catch(() => {})
 }
 
-function toggleStatus(u: SystemUserRow) {
+function toggleStatus(u: SystemUserDto) {
   const toDisable = u.status === 'active'
   ElMessageBox.confirm(
     toDisable
-      ? `确定停用「${u.name}」的账号?停用仅标记状态(mock 简化,不阻断其 mock 行为),可随时重新启用。`
+      ? `确定停用「${u.name}」的账号?停用后 Ta 将立即无法登录、现有登录态也会失效,可随时重新启用。`
       : `确定启用「${u.name}」的账号?`,
     toDisable ? '停用账号' : '启用账号',
     { type: 'warning', confirmButtonText: '确定', cancelButtonText: '取消' },
   )
-    .then(() => {
-      adminStore.setUserStatus(u.id, toDisable ? 'disabled' : 'active')
+    .then(async () => {
+      await adminStore.setUserStatus(u.id, toDisable ? 'disabled' : 'active')
       ElMessage.success(toDisable ? `已停用「${u.name}」` : `已启用「${u.name}」`)
     })
     .catch(() => {})
@@ -88,36 +79,35 @@ function toggleStatus(u: SystemUserRow) {
 
 /* ---- 新增用户弹窗 ---- */
 const addVisible = ref(false)
-const addForm = ref({ avatar: '🐱', name: '', username: '', role: 'user' as UserRole })
+const addSaving = ref(false)
+const addForm = ref({ avatar: '🐱', name: '', username: '', role: 'user' as UserRole, password: '' })
 
 function openAdd() {
-  addForm.value = { avatar: '🐱', name: '', username: '', role: 'user' }
+  addForm.value = { avatar: '🐱', name: '', username: '', role: 'user', password: '' }
   addVisible.value = true
 }
 
-/** 用户名查重(与现有目录冲突时报错) */
-function usernameExists(username: string): boolean {
-  return adminStore.users.some((u) => u.username.toLowerCase() === username.toLowerCase())
-}
-
-function submitAdd() {
+async function submitAdd() {
   const name = addForm.value.name.trim()
   const username = addForm.value.username.trim()
-  if (!name) {
-    ElMessage.warning('请输入昵称')
-    return
+  if (!name) return ElMessage.warning('请输入昵称')
+  if (!username) return ElMessage.warning('请输入用户名')
+  if (addForm.value.password.length < 6) return ElMessage.warning('初始密码至少 6 位')
+  addSaving.value = true
+  try {
+    await adminStore.addUser({
+      name, username,
+      avatar: addForm.value.avatar,
+      role: addForm.value.role,
+      password: addForm.value.password,
+    })
+    addVisible.value = false
+    ElMessage.success(`已新增用户「${name}」`)
+  } catch {
+    /* 用户名重复等错误由请求层提示 */
+  } finally {
+    addSaving.value = false
   }
-  if (!username) {
-    ElMessage.warning('请输入用户名')
-    return
-  }
-  if (usernameExists(username)) {
-    ElMessage.warning('该用户名已存在')
-    return
-  }
-  adminStore.addUser({ name, username, avatar: addForm.value.avatar, role: addForm.value.role })
-  addVisible.value = false
-  ElMessage.success(`已新增用户「${name}」`)
 }
 </script>
 
@@ -153,8 +143,8 @@ function submitAdd() {
     </div>
 
     <!-- 用户列表 -->
-    <div class="yiyu-card user-list">
-      <div v-for="u in filteredUsers()" :key="u.id" class="user-row slide-in-row" :class="{ 'is-disabled': u.status === 'disabled' }">
+    <div class="yiyu-card user-list" v-loading="!adminStore.usersLoaded">
+      <div v-for="u in filteredUsers" :key="u.id" class="user-row slide-in-row" :class="{ 'is-disabled': u.status === 'disabled' }">
         <span class="user-avatar">{{ u.avatar }}</span>
         <div class="user-info">
           <div class="user-name-line">
@@ -186,7 +176,7 @@ function submitAdd() {
         </div>
       </div>
 
-      <div v-if="!filteredUsers().length" class="empty">
+      <div v-if="!filteredUsers.length" class="empty">
         <span class="empty-icon">🔍</span>
         <p>没有匹配的用户</p>
         <el-button v-if="hasFilter" size="small" @click="clearFilters">清空筛选</el-button>
@@ -218,6 +208,9 @@ function submitAdd() {
             <template #prepend>@</template>
           </el-input>
         </el-form-item>
+        <el-form-item label="初始密码">
+          <el-input v-model="addForm.password" type="password" show-password placeholder="初始密码(至少 6 位,请告知用户)" />
+        </el-form-item>
         <el-form-item label="角色">
           <el-radio-group v-model="addForm.role">
             <el-radio value="user">普通用户</el-radio>
@@ -227,7 +220,7 @@ function submitAdd() {
       </el-form>
       <template #footer>
         <el-button @click="addVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitAdd">创建</el-button>
+        <el-button type="primary" :loading="addSaving" @click="submitAdd">创建</el-button>
       </template>
     </el-dialog>
   </div>

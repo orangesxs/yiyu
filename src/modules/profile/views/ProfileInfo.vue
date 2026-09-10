@@ -1,44 +1,78 @@
 <script setup lang="ts">
-import { reactive, ref, computed } from 'vue'
+import { reactive, ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { useProfileStore } from '../stores/profile'
-import { mockToday } from '@/shared/types/common'
+import { useUserStore } from '@/shared/stores/user'
+import { inviteApi, profileApi } from '@/shared/api'
+import type { InviteCodeItem } from '@/shared/api'
 import { avatarOptions } from '../types'
 import type { Gender } from '../types'
 
 const profileStore = useProfileStore()
+const userStore = useUserStore()
 
-/* 已加入天数:从档案 joinedAt 到 mock 基准日(含首尾) */
+onMounted(() => {
+  profileStore.init().catch(() => {})
+  loadInvites()
+})
+
+/* 已加入天数:从档案 joinedAt 到今日(含首尾) */
 const joinedDays = computed(() => {
+  if (!profileStore.profile.joinedAt) return 1
   const start = new Date(profileStore.profile.joinedAt + 'T00:00:00')
-  return Math.max(1, Math.floor((mockToday.getTime() - start.getTime()) / 86400000) + 1)
+  return Math.max(1, Math.floor((Date.now() - start.getTime()) / 86400000) + 1)
 })
 
-/* 编辑表单(头像宫格 + 各字段),保存写回 store */
+/* 编辑表单(头像宫格 + 各字段),档案加载完成后回填 */
 const form = reactive({
-  nickname: profileStore.profile.nickname,
-  avatar: profileStore.profile.avatar,
-  bio: profileStore.profile.bio,
-  gender: profileStore.profile.gender as Gender,
-  birthday: profileStore.profile.birthday || null,
-  region: profileStore.profile.region,
+  nickname: '',
+  avatar: '🧑‍💻',
+  bio: '',
+  gender: 'secret' as Gender,
+  birthday: null as string | null,
+  region: '',
 })
+const syncForm = computed(() => profileStore.profile.updatedAt)
+/* 档案到达(或更新)后同步表单 */
+function fillForm() {
+  const p = profileStore.profile
+  form.nickname = p.nickname
+  form.avatar = p.avatar || '🧑‍💻'
+  form.bio = p.bio
+  form.gender = p.gender
+  form.birthday = p.birthday || null
+  form.region = p.region
+}
+watch(syncForm, fillForm, { immediate: true })
 
-function saveProfile() {
+const saving = ref(false)
+async function saveProfile() {
   if (!form.nickname.trim()) return ElMessage.warning('昵称不能为空')
-  profileStore.updateProfile({
-    nickname: form.nickname.trim(),
-    avatar: form.avatar,
-    bio: form.bio.trim(),
-    gender: form.gender,
-    birthday: form.birthday ?? '',
-    region: form.region.trim(),
-  })
-  ElMessage.success('资料已更新')
+  saving.value = true
+  try {
+    await profileStore.updateProfile({
+      nickname: form.nickname.trim(),
+      avatar: form.avatar,
+      bio: form.bio.trim(),
+      gender: form.gender,
+      birthday: form.birthday ?? '',
+      region: form.region.trim(),
+    })
+    /* 昵称/头像同步顶栏等展示层 */
+    if (userStore.user) {
+      userStore.user.nickname = form.nickname.trim()
+      userStore.user.avatar = form.avatar
+    }
+    ElMessage.success('资料已更新')
+  } catch {
+    /* 校验错误由请求层提示 */
+  } finally {
+    saving.value = false
+  }
 }
 
-/* 修改密码(mock:仅提示) */
+/* 修改密码 */
 const pwd = reactive({ old: '', new1: '', new2: '' })
 const pwdRef = ref<FormInstance>()
 const pwdRules: FormRules = {
@@ -50,12 +84,54 @@ const pwdRules: FormRules = {
     },
   ],
 }
+const pwdSaving = ref(false)
 function savePwd() {
-  pwdRef.value?.validate((ok) => {
+  pwdRef.value?.validate(async (ok) => {
     if (!ok) return
-    ElMessage.success('密码已修改')
-    pwd.old = pwd.new1 = pwd.new2 = ''
+    pwdSaving.value = true
+    try {
+      await profileApi.changePassword({ oldPassword: pwd.old, newPassword: pwd.new1 })
+      ElMessage.success('密码已修改,下次登录请使用新密码')
+      pwd.old = pwd.new1 = pwd.new2 = ''
+    } catch {
+      /* 当前密码不正确等错误由请求层提示 */
+    } finally {
+      pwdSaving.value = false
+    }
   })
+}
+
+/* ---- 邀请码卡片 ---- */
+const invites = ref<InviteCodeItem[]>([])
+const inviteLoading = ref(false)
+/** 未使用码额度(与后端 INVITE_MAX_UNUSED=5 对齐) */
+const INVITE_MAX_UNUSED = 5
+const unusedCount = computed(() => invites.value.filter((i) => !i.usedAt).length)
+
+async function loadInvites() {
+  inviteLoading.value = true
+  try {
+    invites.value = await inviteApi.listMine()
+  } catch {
+    /* 错误由请求层提示 */
+  } finally {
+    inviteLoading.value = false
+  }
+}
+async function createInvite() {
+  try {
+    await inviteApi.create()
+    ElMessage.success('邀请码已生成')
+    await loadInvites()
+  } catch {
+    /* 超额度等错误由请求层提示 */
+  }
+}
+function copyCode(code: string) {
+  navigator.clipboard.writeText(code).then(
+    () => ElMessage.success(`已复制 ${code}`),
+    () => ElMessage.warning('复制失败,请手动选择复制'),
+  )
 }
 </script>
 
@@ -70,7 +146,7 @@ function savePwd() {
 
     <!-- 名片头卡 -->
     <div class="yiyu-card head-card">
-      <span class="big-avatar">{{ profileStore.profile.avatar }}</span>
+      <span class="big-avatar">{{ profileStore.profile.avatar || '🧑‍💻' }}</span>
       <div class="head-info">
         <span class="nickname">{{ profileStore.profile.nickname }}</span>
         <span class="bio">{{ profileStore.profile.bio || '还没有签名' }}</span>
@@ -123,11 +199,11 @@ function savePwd() {
           <el-form-item label="所在地区">
             <el-input v-model="form.region" maxlength="20" placeholder="如:四川·成都(可选)" />
           </el-form-item>
-          <el-button type="primary" plain @click="saveProfile">保存资料</el-button>
+          <el-button type="primary" plain :loading="saving" @click="saveProfile">保存资料</el-button>
         </el-form>
       </div>
 
-      <!-- 账号只读 + 修改密码 -->
+      <!-- 账号只读 + 邀请码 + 修改密码 -->
       <div class="col-stack">
         <div class="yiyu-card readonly-card">
           <h3 class="card-title">账号信息</h3>
@@ -142,6 +218,34 @@ function savePwd() {
           <p class="ro-tip">注册后不可修改</p>
         </div>
 
+        <!-- 邀请码(内部应用:发给朋友注册用) -->
+        <div class="yiyu-card invite-card" v-loading="inviteLoading">
+          <div class="card-title-row">
+            <h3 class="card-title">邀请码</h3>
+            <span class="invite-quota num">{{ unusedCount }}/{{ INVITE_MAX_UNUSED }} 未使用</span>
+          </div>
+          <div v-if="invites.length" class="invite-list">
+            <div v-for="i in invites" :key="i.id" class="invite-row">
+              <span class="invite-code num" :class="{ used: i.usedAt }">{{ i.code }}</span>
+              <span class="invite-state">
+                <template v-if="i.usedAt">已被 {{ i.usedBy?.nickname || '某位朋友' }} 使用</template>
+                <template v-else>未使用</template>
+              </span>
+              <button class="invite-copy" type="button" @click="copyCode(i.code)">复制</button>
+            </div>
+          </div>
+          <p v-else class="invite-empty">还没有邀请码,生成一个发给朋友吧</p>
+          <el-button
+            type="primary"
+            plain
+            :disabled="unusedCount >= INVITE_MAX_UNUSED"
+            @click="createInvite"
+          >
+            {{ unusedCount >= INVITE_MAX_UNUSED ? '额度已用完' : '生成邀请码' }}
+          </el-button>
+          <p class="ro-tip">邀请码一次性使用;每人最多持有 {{ INVITE_MAX_UNUSED }} 个未使用的码</p>
+        </div>
+
         <div class="yiyu-card pwd-card">
           <h3 class="card-title">修改密码</h3>
           <el-form ref="pwdRef" :model="pwd" :rules="pwdRules" label-position="top">
@@ -154,7 +258,7 @@ function savePwd() {
             <el-form-item label="确认新密码" prop="new2">
               <el-input v-model="pwd.new2" type="password" show-password />
             </el-form-item>
-            <el-button type="primary" plain @click="savePwd">修改密码</el-button>
+            <el-button type="primary" plain :loading="pwdSaving" @click="savePwd">修改密码</el-button>
           </el-form>
         </div>
       </div>
@@ -198,7 +302,7 @@ function savePwd() {
 }
 
 .col-stack { display: flex; flex-direction: column; gap: var(--gap-module); }
-.edit-card, .readonly-card, .pwd-card { padding: var(--gap-card); }
+.edit-card, .readonly-card, .invite-card, .pwd-card { padding: var(--gap-card); }
 .card-title { font-size: var(--fs-card-title); font-weight: 600; margin-bottom: 16px; }
 
 .avatar-row { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -227,6 +331,53 @@ function savePwd() {
 .ro-label { color: var(--text-secondary); font-size: 13px; }
 .ro-value { font-size: 13px; color: var(--text-regular); }
 .ro-tip { margin-top: 10px; font-size: var(--fs-caption); color: var(--text-secondary); line-height: 1.6; }
+
+/* 邀请码卡片 */
+.card-title-row { display: flex; align-items: baseline; justify-content: space-between; }
+.card-title-row .card-title { margin-bottom: 12px; }
+.invite-quota { font-size: var(--fs-caption); color: var(--text-secondary); }
+.invite-list { display: flex; flex-direction: column; margin-bottom: 14px; }
+.invite-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--border-color);
+}
+.invite-row:last-child { border-bottom: none; }
+.invite-code {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--color-primary);
+}
+.invite-code.used { color: var(--text-secondary); text-decoration: line-through; }
+.invite-state {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.invite-copy {
+  border: 1px solid var(--border-color);
+  background: var(--bg-soft);
+  color: var(--text-regular);
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 2px 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--dur-base) ease;
+}
+.invite-copy:hover { color: var(--color-primary); border-color: var(--color-primary); }
+.invite-empty {
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+  margin-bottom: 14px;
+}
 
 @media (max-width: 768px) {
   .info-grid { grid-template-columns: 1fr; }

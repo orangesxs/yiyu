@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { PieChart, LineChart, BarChart, ScatterChart } from 'echarts/charts'
@@ -9,12 +9,16 @@ import {
 } from 'echarts/components'
 import VChart from 'vue-echarts'
 import { useLedgerStore } from '../stores/ledger'
-import { mockToday } from '@/shared/types/common'
 import type { TxType, Transaction } from '../types'
 
 use([CanvasRenderer, PieChart, LineChart, BarChart, ScatterChart, GridComponent, TooltipComponent, LegendComponent, VisualMapComponent, CalendarComponent])
 
 const store = useLedgerStore()
+onMounted(() => {
+  store.init().catch(() => {})
+})
+/** 今日(真实时钟,报表区间推导的锚点) */
+const today = new Date()
 
 /* 维度:支出 / 收入 / 总计(全部图表联动) */
 const type = ref<'expense' | 'income' | 'total'>('expense')
@@ -34,21 +38,21 @@ function fmtShort(d: Date) { return `${d.getMonth() + 1}/${d.getDate()}` }
 
 interface DateRange { start: Date; end: Date }
 
-/* 区间推导(mock 基准日 2026-09-07 周一) */
+/* 区间推导(锚定真实今日) */
 function rangeOf(off: number): DateRange {
   if (range.value === 'week') {
-    const end = new Date(mockToday); end.setDate(mockToday.getDate() + off * 7)
+    const end = new Date(today); end.setDate(today.getDate() + off * 7)
     const start = new Date(end); start.setDate(end.getDate() - 6)
     return { start, end }
   }
   if (range.value === 'month') {
-    const anchor = new Date(mockToday.getFullYear(), mockToday.getMonth() + off, 1)
+    const anchor = new Date(today.getFullYear(), today.getMonth() + off, 1)
     const endDay = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).getDate()
-    const end = new Date(anchor.getFullYear(), anchor.getMonth(), Math.min(endDay, off === 0 ? mockToday.getDate() : endDay))
+    const end = new Date(anchor.getFullYear(), anchor.getMonth(), Math.min(endDay, off === 0 ? today.getDate() : endDay))
     return { start: anchor, end }
   }
-  const start = new Date(mockToday.getFullYear() + off, 0, 1)
-  const end = off === 0 ? new Date(mockToday) : new Date(mockToday.getFullYear() + off, 11, 31)
+  const start = new Date(today.getFullYear() + off, 0, 1)
+  const end = off === 0 ? new Date(today) : new Date(today.getFullYear() + off, 11, 31)
   return { start, end }
 }
 const curRange = computed(() => rangeOf(offset.value))
@@ -107,7 +111,7 @@ const diffAbs = computed(() => typeValue.value - prevTypeValue.value)
 const dayCount = computed(() => {
   const { start, end } = curRange.value
   if (range.value === 'year') {
-    const limit = Math.min(new Date(end.getFullYear(), 11, 31).getTime(), mockToday.getTime())
+    const limit = Math.min(new Date(end.getFullYear(), 11, 31).getTime(), today.getTime())
     return Math.round((limit - start.getTime()) / 86400000) + 1
   }
   return Math.round((end.getTime() - start.getTime()) / 86400000) + 1
@@ -161,7 +165,7 @@ const trendOption = computed(() => {
 
   if (range.value === 'year') {
     const cur = monthAgg(curRange.value)
-    const prev = offset.value !== 0 ? null : monthAgg({ start: new Date(mockToday.getFullYear() - 1, 0, 1), end: new Date(mockToday.getFullYear() - 1, 11, 31) })
+    const prev = offset.value !== 0 ? null : monthAgg({ start: new Date(today.getFullYear() - 1, 0, 1), end: new Date(today.getFullYear() - 1, 11, 31) })
     labels = cur.map((_, i) => `${i + 1}月`)
     const keyOf = (m: DayAgg) => (isTotal.value ? m.income - m.expense : m[typeKey.value as 'income' | 'expense'])
     main = cur.map(keyOf)
@@ -306,7 +310,7 @@ const calCells = computed<(CalCell | null)[]>(() => {
       income: +m.income.toFixed(2),
       expense: +m.expense.toFixed(2),
       net: +(m.income - m.expense).toFixed(2),
-      isToday: y === mockToday.getFullYear() && i === mockToday.getMonth(),
+      isToday: y === today.getFullYear() && i === today.getMonth(),
       monthCell: true,
     }))
   }
@@ -318,7 +322,7 @@ const calCells = computed<(CalCell | null)[]>(() => {
     const daysInMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate()
     for (let dom = 1; dom <= daysInMonth; dom++) {
       const d = new Date(start.getFullYear(), start.getMonth(), dom)
-      if (d > mockToday) {
+      if (d > today) {
         cells.push({ key: ymd(d), label: String(dom), foot: d.getMonth() + 1 + '/' + dom, future: true })
         continue
       }
@@ -331,7 +335,7 @@ const calCells = computed<(CalCell | null)[]>(() => {
         income: +a.income.toFixed(2),
         expense: +a.expense.toFixed(2),
         net: +(a.income - a.expense).toFixed(2),
-        isToday: k === ymd(mockToday),
+        isToday: k === ymd(today),
       })
     }
     return cells
@@ -350,7 +354,7 @@ const calCells = computed<(CalCell | null)[]>(() => {
       income: +a.income.toFixed(2),
       expense: +a.expense.toFixed(2),
       net: +(a.income - a.expense).toFixed(2),
-      isToday: k === ymd(mockToday),
+      isToday: k === ymd(today),
     })
   }
   return cells

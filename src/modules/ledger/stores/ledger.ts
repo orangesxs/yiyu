@@ -1,29 +1,62 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import {
-  generateTransactions, expenseCategories, incomeCategories,
-  books as mockBooks,
-} from '../mock/ledger'
+import { ledgerApi } from '@/shared/api'
+import type { TransactionDto } from '@/shared/api'
 import type { Book, Category, DailyTotal, RangeStats, Transaction, TxType } from '../types'
 
+/**
+ * 记账本数据源:books/categories/transactions 全部来自后端 API,
+ * CRUD 调 API 成功后本地同步;报表聚合(monthStats/dailyTotals/…)仍是客户端计算。
+ */
 export const useLedgerStore = defineStore('ledger', () => {
-  const transactions = ref<Transaction[]>(generateTransactions())
-  const books = ref<Book[]>(mockBooks.map((b) => ({ ...b })))
-  const currentBookId = ref('b1')
-  /* 分类(响应式,支持自定义新增) */
-  const categories = ref<Record<TxType, Category[]>>({
-    expense: JSON.parse(JSON.stringify(expenseCategories)),
-    income: JSON.parse(JSON.stringify(incomeCategories)),
-  })
+  const transactions = ref<Transaction[]>([])
+  const books = ref<Book[]>([])
+  const currentBookId = ref('')
+  /* loaded:首次加载完成(为 false 时视图可显示空态而非误导性的"无记录") */
+  const loaded = ref(false)
+  const loading = ref(false)
+  /* 分类(预置+我的自定义,后端返回根分类带子分类) */
+  const categories = ref<Record<TxType, Category[]>>({ expense: [], income: [] })
 
-  /* 新增自定义分类(同名去重),返回新分类 id */
-  function addCustomCategory(type: TxType, name: string, icon: string): string {
-    const pool = categories.value[type]
-    const id = 'custom-' + type + '-' + Date.now()
-    pool.push({ id, name, icon: icon || '🏷️', children: [], custom: true })
-    return id
+  /** 服务端 DTO → 前端 Transaction(note null 归一为 undefined,类型兼容) */
+function normalizeTx(t: TransactionDto): Transaction {
+  return { ...t, note: t.note ?? undefined }
+}
+
+/** 拉取全部基础数据(登录后/进入应用时调用一次) */
+  async function init() {
+    if (loading.value) return
+    loading.value = true
+    try {
+      const [bookList, expenseCats, incomeCats] = await Promise.all([
+        ledgerApi.listBooks(),
+        ledgerApi.listCategories('expense'),
+        ledgerApi.listCategories('income'),
+      ])
+      books.value = bookList
+      categories.value = { expense: expenseCats, income: incomeCats }
+      /* 当前账本:优先默认账本,否则第一本 */
+      if (!currentBookId.value || !bookList.some((b) => b.id === currentBookId.value)) {
+        currentBookId.value = bookList.find((b) => b.isDefault)?.id || bookList[0]?.id || ''
+      }
+      /* 流水:当前账本全量(个人量级,聚合留前端) */
+      if (currentBookId.value) {
+        transactions.value = (await ledgerApi.listTransactions({ bookId: currentBookId.value })).map(normalizeTx)
+      }
+      loaded.value = true
+    } finally {
+      loading.value = false
+    }
   }
-  function removeCustomCategory(type: TxType, id: string) {
+
+  /* 新增自定义分类(后端去重),成功后返回新分类 id */
+  async function addCustomCategory(type: TxType, name: string, icon: string): Promise<string> {
+    const row = await ledgerApi.createCategory({ type, name, icon: icon || '🏷️' })
+    categories.value[type].push({ id: row.id, name: row.name, icon: row.icon, children: [], custom: true })
+    return row.id
+  }
+  async function removeCustomCategory(type: TxType, id: string) {
+    await ledgerApi.removeCategory(id)
     const pool = categories.value[type]
     const i = pool.findIndex((c) => c.id === id)
     if (i > -1 && pool[i].custom) pool.splice(i, 1)
@@ -100,26 +133,39 @@ export const useLedgerStore = defineStore('ledger', () => {
       .sort((a, b) => b.value - a.value)
   }
 
-  /* 操作 */
-  function addTransaction(t: Omit<Transaction, 'id' | 'bookId'> & { bookId?: string }) {
-    transactions.value.unshift({
-      id: 't' + Date.now(),
+  /* 操作(API 成功后本地同步) */
+  async function addTransaction(t: Omit<Transaction, 'id' | 'bookId'> & { bookId?: string }) {
+    const row = await ledgerApi.createTransaction({
+      type: t.type,
+      amount: t.amount,
+      categoryId: t.categoryId,
+      date: t.date,
+      note: t.note,
       bookId: t.bookId ?? currentBookId.value,
-      ...t,
     })
+    transactions.value.unshift({ ...t, bookId: row.bookId, id: row.id })
   }
-  function updateTransaction(id: string, patch: Partial<Transaction>) {
+  async function updateTransaction(id: string, patch: Partial<Transaction>) {
+    const row = await ledgerApi.updateTransaction(id, {
+      ...patch,
+      categoryId: patch.categoryId,
+    })
     const i = transactions.value.findIndex((t) => t.id === id)
-    if (i > -1) transactions.value[i] = { ...transactions.value[i], ...patch }
+    if (i > -1) transactions.value[i] = { ...transactions.value[i], ...patch, categoryName: row.categoryName }
   }
-  function removeTransaction(id: string) {
+  async function removeTransaction(id: string) {
+    await ledgerApi.removeTransaction(id)
     transactions.value = transactions.value.filter((t) => t.id !== id)
   }
-  function switchBook(id: string) {
+  async function switchBook(id: string) {
+    if (id === currentBookId.value) return
     currentBookId.value = id
+    /* 切账本重拉该账本流水 */
+    transactions.value = (await ledgerApi.listTransactions({ bookId: id })).map(normalizeTx)
   }
-  function addBook(b: { name: string; icon: string }) {
-    books.value.push({ ...b, id: 'b' + Date.now(), monthExpense: 0, isDefault: false })
+  async function addBook(b: { name: string; icon: string }) {
+    const row = await ledgerApi.createBook(b)
+    books.value.push({ ...b, id: row.id, monthExpense: 0, isDefault: false })
   }
 
   const currentBook = computed(() =>
@@ -127,10 +173,10 @@ export const useLedgerStore = defineStore('ledger', () => {
   )
 
   return {
-    transactions, books, categories,
+    transactions, books, categories, loaded, loading,
     currentBookId, currentBook, bookTransactions, groupedByDay,
     monthStats, rangeStats, dailyTotals, categoryStats,
-    addTransaction, updateTransaction, removeTransaction,
+    init, addTransaction, updateTransaction, removeTransaction,
     switchBook, addBook, addCustomCategory, removeCustomCategory,
   }
 })

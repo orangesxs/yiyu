@@ -1,9 +1,9 @@
 /* 数据概览页样式(大页样式独立同名 .css,项目惯例) */
 
-/* 统计卡行:2 卡自适应 */
+/* 统计卡行:4 卡自适应 */
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: var(--gap-module);
   margin-bottom: var(--gap-card);
 }
@@ -128,6 +128,9 @@
 @media (max-width: 768px) {
   .chart-grid {
     grid-template-columns: 1fr;
+  }
+  .stat-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
   .recent-module {
     display: none;

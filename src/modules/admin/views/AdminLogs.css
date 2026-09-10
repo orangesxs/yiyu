@@ -102,6 +102,13 @@
   font-size: 36px;
 }
 
+/* 分页(服务端分页,固定在列表底部) */
+.pager-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 14px 0 10px;
+}
+
 /* 窄屏 */
 @media (max-width: 768px) {
   .log-stats {

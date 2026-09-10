@@ -26,6 +26,12 @@ export const adminRoutes: RouteRecordRaw[] = [
         component: () => import('./views/AdminLogs.vue'),
         meta: { app: 'admin', title: '系统日志', requiresAuth: true, requiresAdmin: true },
       },
+      {
+        path: 'invites',
+        name: 'admin-invites',
+        component: () => import('./views/AdminInvites.vue'),
+        meta: { app: 'admin', title: '邀请码', requiresAuth: true, requiresAdmin: true },
+      },
     ],
   },
 ]

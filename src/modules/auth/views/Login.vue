@@ -19,14 +19,17 @@ const rules: FormRules = {
 }
 
 function submit() {
-  formRef.value?.validate((ok) => {
+  formRef.value?.validate(async (ok) => {
     if (!ok) return
     loading.value = true
-    setTimeout(() => {
-      userStore.login({ username: form.username, nickname: form.username })
-      loading.value = false
+    try {
+      await userStore.login({ username: form.username, password: form.password })
       router.push('/')
-    }, 600)
+    } catch {
+      /* 错误提示由请求层统一弹出 */
+    } finally {
+      loading.value = false
+    }
   })
 }
 </script>

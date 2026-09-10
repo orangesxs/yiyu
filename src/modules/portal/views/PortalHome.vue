@@ -1,19 +1,24 @@
 <script setup lang="ts">
+import { computed, onMounted } from 'vue'
 import { useUserStore } from '@/shared/stores/user'
 import { useLedgerStore } from '@/modules/ledger/stores/ledger'
-import { mockToday } from '@/shared/types/common'
+import { nowYM } from '@/shared/types/common'
 
 const userStore = useUserStore()
 const ledgerStore = useLedgerStore()
 
-/* 问候 */
-const hour = mockToday.getHours()
-const greeting = hour < 6 ? '夜深了' : hour < 11 ? '早上好' : hour < 14 ? '中午好' : hour < 18 ? '下午好' : '晚上好'
-const dateText = `${mockToday.getFullYear()} 年 ${mockToday.getMonth() + 1} 月 ${mockToday.getDate()} 日 · 星期${'日一二三四五六'[mockToday.getDay()]}`
+onMounted(() => {
+  ledgerStore.init().catch(() => {})
+})
+
+/* 问候(真实时钟) */
+const now = new Date()
+const greeting = now.getHours() < 6 ? '夜深了' : now.getHours() < 11 ? '早上好' : now.getHours() < 14 ? '中午好' : now.getHours() < 18 ? '下午好' : '晚上好'
+const dateText = `${now.getFullYear()} 年 ${now.getMonth() + 1} 月 ${now.getDate()} 日 · 星期${'日一二三四五六'[now.getDay()]}`
 const dailyQuote = '把日子过成自己喜欢的样子,是一件值得练习的事。'
 
-/* 应用摘要数据 */
-const monthStats = ledgerStore.monthStats('2026-09')
+/* 应用摘要数据(本月统计;ledger 数据未加载完成时显示占位 0) */
+const monthStats = computed(() => ledgerStore.monthStats(nowYM()))
 
 interface AppEntry { label: string; value: string; cls: string }
 interface AppCard {
@@ -26,7 +31,7 @@ interface AppCard {
   to: string
 }
 
-const apps: AppCard[] = [
+const apps = computed<AppCard[]>(() => [
   {
     key: 'ledger',
     icon: '💰',
@@ -34,12 +39,12 @@ const apps: AppCard[] = [
     sub: '把每一笔都记得清楚',
     color: 'var(--app-ledger)',
     entries: [
-      { label: '本月支出', value: `¥ ${monthStats.expense.toFixed(0)}`, cls: 'money-out' },
-      { label: '结余', value: `¥ ${monthStats.balance.toFixed(0)}`, cls: 'money-in' },
+      { label: '本月支出', value: `¥ ${monthStats.value.expense.toFixed(0)}`, cls: 'money-out' },
+      { label: '结余', value: `¥ ${monthStats.value.balance.toFixed(0)}`, cls: 'money-in' },
     ],
     to: '/ledger/transactions',
   },
-]
+])
 </script>
 
 <template>
@@ -81,7 +86,7 @@ const apps: AppCard[] = [
         <div class="app-card-data">
           <div v-for="e in a.entries" :key="e.label" class="entry">
             <span class="entry-label">{{ e.label }}</span>
-            <span class="entry-value num" :class="e.cls">{{ e.value }}</span>
+            <span class="entry-value num" :class="e.cls">{{ ledgerStore.loaded ? e.value : '— —' }}</span>
           </div>
         </div>
       </div>

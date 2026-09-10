@@ -49,6 +49,7 @@ const apps: Record<'ledger' | 'profile' | 'admin', ShellApp> = {
       { path: '/admin/dashboard', label: '数据概览', elIcon: 'Odometer' },
       { path: '/admin/users', label: '用户管理', elIcon: 'UserFilled' },
       { path: '/admin/logs', label: '系统日志', elIcon: 'List' },
+      { path: '/admin/invites', label: '邀请码', elIcon: 'Ticket' },
     ],
   },
 }

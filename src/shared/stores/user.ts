@@ -1,34 +1,60 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { User } from '../types/common'
+import { authApi } from '@/shared/api'
+import { clearToken, getToken, setToken } from '@/shared/api/http'
 
-const USER_KEY = 'yiyu-user'
-
+/**
+ * 登录态:token 存 localStorage(yiyu-token),用户信息由 /auth/me 拉取。
+ * isAdmin 是全站唯一"是否管理员"判定(路由守卫/后台入口消费)。
+ */
 export const useUserStore = defineStore('user', () => {
-  const user = ref<User | null>(normalize(JSON.parse(localStorage.getItem(USER_KEY) || 'null')))
-  /** 是否管理员(后台入口与 requiresAdmin 守卫的唯一判定来源);旧登录态无 role 视为普通用户 */
+  const user = ref<User | null>(null)
+  const ready = ref(false) // 启动时 fetchMe 是否已完成(路由守卫依赖,避免闪跳)
   const isAdmin = computed(() => user.value?.role === 'admin')
 
-  function normalize(u: User | null): User | null {
-    // 旧登录态无 id,补默认 u1(mock 成员安)
-    return u && !u.id ? { ...u, id: 'u1' } : u
+  /** 登录:成功后落 token 与用户信息 */
+  async function login(payload: { username: string; password: string }) {
+    const res = await authApi.login(payload)
+    setToken(res.token)
+    user.value = res.user
   }
 
-  function login({ username, nickname }: { username: string; nickname?: string }) {
-    // mock 简化:登录即管理员,保留已选头像
-    user.value = { id: 'u1', username, nickname: nickname || username, avatar: user.value?.avatar, role: 'admin' }
-    localStorage.setItem(USER_KEY, JSON.stringify(user.value))
+  /** 注册(需邀请码):成功即视为登录 */
+  async function register(payload: {
+    username: string
+    nickname: string
+    password: string
+    inviteCode: string
+  }) {
+    const res = await authApi.register(payload)
+    setToken(res.token)
+    user.value = res.user
   }
-  function logout() {
+
+  /** 应用启动时恢复登录态:有 token 则拉 me(403 停用等由请求层统一弹提示清态) */
+  async function fetchMe() {
+    if (getToken()) {
+      try {
+        user.value = await authApi.me()
+      } catch {
+        user.value = null
+      }
+    }
+    ready.value = true
+  }
+
+  /** 退出:调后端记日志,本地清态(旧 yiyu-user 一并清理,兼容迁移) */
+  async function logout() {
+    try {
+      await authApi.logout()
+    } catch {
+      /* 后端不可达也照样本地退出 */
+    }
     user.value = null
-    localStorage.removeItem(USER_KEY)
-  }
-  /** 只允许改昵称/头像;username 只读 */
-  function updateProfile(patch: Partial<Pick<User, 'nickname' | 'avatar'>>) {
-    if (!user.value) return
-    user.value = { ...user.value, ...patch }
-    localStorage.setItem(USER_KEY, JSON.stringify(user.value))
+    clearToken()
+    localStorage.removeItem('yiyu-user')
   }
 
-  return { user, isAdmin, login, logout, updateProfile }
+  return { user, ready, isAdmin, login, register, fetchMe, logout }
 })

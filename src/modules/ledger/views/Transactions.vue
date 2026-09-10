@@ -1,18 +1,28 @@
 <script setup lang="ts">
-import { ref, computed, reactive } from 'vue'
+import { ref, computed, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useLedgerStore } from '../stores/ledger'
-import { mockNowStr } from '@/shared/types/common'
+import { nowStr } from '@/shared/types/common'
 import type { Transaction, TxType, Category } from '../types'
 
 const store = useLedgerStore()
 
-/* 当前月份 */
-const month = ref('2026-09')
-const months = [
-  '2026-09', '2026-08', '2026-07', '2026-06', '2026-05', '2026-04',
-  '2026-03', '2026-02', '2026-01', '2025-12', '2025-11', '2025-10',
-]
+onMounted(() => {
+  store.init().catch(() => {})
+})
+
+/* 当前月份(由当前月倒推 12 个月,最新在前) */
+function buildMonths(): string[] {
+  const list: string[] = []
+  const now = new Date()
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    list.push(`${d.getFullYear()}-${d.getMonth() + 1 < 10 ? '0' + (d.getMonth() + 1) : d.getMonth() + 1}`)
+  }
+  return list
+}
+const month = ref(buildMonths()[0])
+const months = buildMonths()
 const stats = computed(() => store.monthStats(month.value))
 
 /* 筛选 */
@@ -49,14 +59,14 @@ const form = reactive({
   type: 'expense' as TxType,
   amount: null as number | null,
   categoryId: '',
-  date: mockNowStr(),
+  date: nowStr(),
   note: '',
   bookId: store.currentBookId,
 })
 
 function openDrawer() {
   editingId.value = null
-  Object.assign(form, { type: 'expense', amount: null, categoryId: '', date: mockNowStr(), note: '', bookId: store.currentBookId })
+  Object.assign(form, { type: 'expense', amount: null, categoryId: '', date: nowStr(), note: '', bookId: store.currentBookId })
   drawer.value = true
 }
 function editRow(t: Transaction) {
@@ -88,30 +98,35 @@ function openCatDialog() {
   Object.assign(catForm, { name: '', icon: '🏷️' })
   catDialog.value = true
 }
-function saveCategory() {
-  if (!catForm.name.trim()) return ElMessage.warning('输入分类名称')
+async function saveCategory() {
+  const name = catForm.name.trim()
+  if (!name) return ElMessage.warning('输入分类名称')
   const exists = catPool.value.some(
-    (c) => c.name === catForm.name.trim() || c.children.some((ch) => ch.name === catForm.name.trim())
+    (c) => c.name === name || c.children.some((ch) => ch.name === name)
   )
   if (exists) return ElMessage.warning('该分类已存在')
-  const id = store.addCustomCategory(form.type, catForm.name.trim(), catForm.icon)
-  form.categoryId = id
-  catDialog.value = false
-  ElMessage.success(`已添加自定义分类「${catForm.name}」`)
+  try {
+    const id = await store.addCustomCategory(form.type, name, catForm.icon)
+    form.categoryId = id
+    catDialog.value = false
+    ElMessage.success(`已添加自定义分类「${name}」`)
+  } catch {
+    /* 重名等服务端校验错误由请求层提示 */
+  }
 }
 function removeCategory(c: { id: string; name: string }) {
   const root = catPool.value.find((x) => x.id === c.id)
   if (!root?.custom) return
   ElMessageBox.confirm(`删除自定义分类「${c.name}」?已有记录不受影响。`, '删除分类', {
     type: 'warning', confirmButtonText: '删除',
-  }).then(() => {
-    store.removeCustomCategory(form.type, c.id)
+  }).then(async () => {
+    await store.removeCustomCategory(form.type, c.id)
     if (form.categoryId === c.id) form.categoryId = ''
     ElMessage.success('已删除')
   }).catch(() => {})
 }
 
-function save() {
+async function save() {
   if (!form.amount || form.amount <= 0) return ElMessage.warning('请输入金额')
   if (!form.categoryId) return ElMessage.warning('请选择分类')
   const cat = flatCats.value.find((c) => c.id === form.categoryId)
@@ -121,14 +136,18 @@ function save() {
     date: form.date, note: form.note,
     bookId: form.bookId,
   }
-  if (editingId.value) {
-    store.updateTransaction(editingId.value, payload)
-    ElMessage.success('已保存修改')
-  } else {
-    store.addTransaction(payload)
-    ElMessage.success('已记一笔 ✓')
+  try {
+    if (editingId.value) {
+      await store.updateTransaction(editingId.value, payload)
+      ElMessage.success('已保存修改')
+    } else {
+      await store.addTransaction(payload)
+      ElMessage.success('已记一笔 ✓')
+    }
+    drawer.value = false
+  } catch {
+    /* 校验错误由请求层提示,抽屉保留现场 */
   }
-  drawer.value = false
 }
 
 function removeRow(t: Transaction) {
@@ -136,8 +155,8 @@ function removeRow(t: Transaction) {
     confirmButtonText: '删除',
     cancelButtonText: '取消',
     type: 'warning',
-  }).then(() => {
-    store.removeTransaction(t.id)
+  }).then(async () => {
+    await store.removeTransaction(t.id)
     ElMessage.success('已删除')
   }).catch(() => {})
 }

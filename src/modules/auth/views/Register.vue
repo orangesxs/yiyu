@@ -10,7 +10,7 @@ const userStore = useUserStore()
 const formRef = ref<FormInstance>()
 const loading = ref(false)
 
-const form = reactive({ username: '', nickname: '', password: '', confirm: '' })
+const form = reactive({ username: '', nickname: '', password: '', confirm: '', inviteCode: '' })
 
 function validateConfirm(_rule: unknown, value: string, callback: (err?: Error) => void) {
   if (value !== form.password) callback(new Error('两次输入的密码不一致'))
@@ -27,18 +27,27 @@ const rules: FormRules = {
     { min: 6, message: '密码至少 6 位', trigger: 'blur' },
   ],
   confirm: [{ required: true, validator: validateConfirm, trigger: 'blur' }],
+  inviteCode: [{ required: true, message: '请输入邀请码', trigger: 'blur' }],
 }
 
 function submit() {
-  formRef.value?.validate((ok) => {
+  formRef.value?.validate(async (ok) => {
     if (!ok) return
     loading.value = true
-    setTimeout(() => {
-      userStore.login({ username: form.username, nickname: form.nickname || form.username })
-      loading.value = false
+    try {
+      await userStore.register({
+        username: form.username,
+        nickname: form.nickname || form.username,
+        password: form.password,
+        inviteCode: form.inviteCode.trim(),
+      })
       ElMessage.success('欢迎来到你的一隅')
       router.push('/')
-    }, 600)
+    } catch {
+      /* 错误提示由请求层统一弹出(邀请码无效/用户名已存在等) */
+    } finally {
+      loading.value = false
+    }
   })
 }
 </script>
@@ -60,6 +69,9 @@ function submit() {
       </el-form-item>
       <el-form-item prop="password">
         <el-input v-model="form.password" type="password" show-password placeholder="密码(至少 6 位)" :prefix-icon="'Lock'" />
+      </el-form-item>
+      <el-form-item prop="inviteCode">
+        <el-input v-model="form.inviteCode" placeholder="邀请码(向好友或管理员索取)" :prefix-icon="'Ticket'" maxlength="8" />
       </el-form-item>
       <el-form-item prop="confirm">
         <el-input v-model="form.confirm" type="password" show-password placeholder="确认密码" :prefix-icon="'Lock'" />
