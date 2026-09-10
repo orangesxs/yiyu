@@ -1,6 +1,6 @@
 /* 记账本 mock 数据 */
 
-import type { Account, Book, Category, Member, Transaction } from '../types'
+import type { Book, Category, Transaction } from '../types'
 
 export const expenseCategories: Category[] = [
   { id: 'food', name: '餐饮', icon: '🍜', children: [{ id: 'food-breakfast', name: '早餐' }, { id: 'food-lunch', name: '午餐' }, { id: 'food-dinner', name: '晚餐' }, { id: 'food-snack', name: '零食饮料' }] },
@@ -22,24 +22,10 @@ export const incomeCategories: Category[] = [
   { id: 'refund', name: '退款', icon: '↩️', children: [] },
 ]
 
-export const accounts: Account[] = [
-  { id: 'cash', name: '现金', type: 'cash', icon: '💵', color: '#18A058', initial: 2000 },
-  { id: 'icbc', name: '工商银行', type: 'bank', icon: '🏦', color: '#409EFF', initial: 52000 },
-  { id: 'alipay', name: '支付宝', type: 'alipay', icon: '🅰️', color: '#1677FF', initial: 8600 },
-  { id: 'wechat', name: '微信', type: 'wechat', icon: '💚', color: '#07C160', initial: 3200 },
-  { id: 'ccb', name: '信用卡', type: 'credit', icon: '💳', color: '#E5484D', initial: -2300 },
-]
-
-export const members: Member[] = [
-  { id: 'u1', name: '安', avatar: '🧑‍💻', role: 'admin' },
-  { id: 'u2', name: '小林', avatar: '👩', role: 'member' },
-  { id: 'u3', name: '妈妈', avatar: '👩‍🦳', role: 'viewer' },
-]
-
 export const books: Book[] = [
-  { id: 'b1', name: '日常账本', icon: '📘', monthExpense: 3280, isDefault: true, memberIds: ['u1', 'u2', 'u3'] },
-  { id: 'b2', name: '装修账', icon: '🏗️', monthExpense: 18650, isDefault: false, memberIds: ['u1', 'u2'] },
-  { id: 'b3', name: '旅行基金', icon: '✈️', monthExpense: 890, isDefault: false, memberIds: ['u1'] },
+  { id: 'b1', name: '日常账本', icon: '📘', monthExpense: 3280, isDefault: true },
+  { id: 'b2', name: '装修账', icon: '🏗️', monthExpense: 18650, isDefault: false },
+  { id: 'b3', name: '旅行基金', icon: '✈️', monthExpense: 890, isDefault: false },
 ]
 
 function pad(n: number) { return n < 10 ? '0' + n : '' + n }
@@ -64,7 +50,6 @@ const socialNotes = ['同事结婚 随礼', '朋友生日礼物', '请爸妈吃�
 interface ExpensePool {
   pool: () => [string, number]
   cat: [string, string]
-  acc: string
   freq: number
   min: number
   max: number
@@ -72,17 +57,17 @@ interface ExpensePool {
 
 /* b1 单笔支出池:[备注, 金额] */
 const b1Pools: ExpensePool[] = [
-  { pool: () => [pick(breakfastNotes), amt(9, 0.4)], cat: ['food-breakfast', '早餐'], acc: 'wechat', freq: 0.55, min: 5, max: 12 },
-  { pool: () => [pick(lunchNotes), amt(26, 0.45)], cat: ['food-lunch', '午餐'], acc: 'alipay', freq: 0.95, min: 12, max: 30 },
-  { pool: () => [pick(dinnerNotes), amt(52, 0.6)], cat: ['food-dinner', '晚餐'], acc: 'alipay', freq: 0.75, min: 18, max: 120 },
-  { pool: () => [pick(['奶茶', '瑞幸生椰拿铁', '咖啡续命', '喜茶']), amt(18, 0.4)], cat: ['food-snack', '零食饮料'], acc: 'wechat', freq: 0.6, min: 8, max: 35 },
-  { pool: () => ['地铁通勤', 6], cat: ['transport-subway', '地铁上班'], acc: 'alipay', freq: 0.7, min: 4, max: 12 },
-  { pool: () => [pick(taxiNotes), amt(34, 0.5)], cat: ['transport-taxi', '打车'], acc: 'wechat', freq: 0.22, min: 18, max: 80 },
-  { pool: () => [pick(shopNotes), amt(96, 0.55)], cat: ['shopping-daily', '超市采购'], acc: 'icbc', freq: 0.3, min: 30, max: 260 },
-  { pool: () => [pick(funNotes), amt(58, 0.6)], cat: [rnd() > 0.5 ? 'fun-movie' : 'fun-game', '娱乐'], acc: 'wechat', freq: 0.18, min: 25, max: 150 },
-  { pool: () => [pick(['猫罐头', '猫砂', '猫条冻干', '猫粮补给']), amt(115, 0.5)], cat: ['pet-food', '猫粮'], acc: 'icbc', freq: 0.12, min: 45, max: 260 },
-  { pool: () => [pick(['优衣库 换季', '淘宝 秋装', '球鞋 冲动消费']), amt(320, 0.6)], cat: ['shopping-cloth', '服饰'], acc: 'ccb', freq: 0.08, min: 120, max: 900 },
-  { pool: () => [pick(['微信读书年卡', '买书 网易蜗牛', 'B站大会员']), amt(48, 0.5)], cat: ['study-book', '买书'], acc: 'alipay', freq: 0.1, min: 18, max: 128 },
+  { pool: () => [pick(breakfastNotes), amt(9, 0.4)], cat: ['food-breakfast', '早餐'], freq: 0.55, min: 5, max: 12 },
+  { pool: () => [pick(lunchNotes), amt(26, 0.45)], cat: ['food-lunch', '午餐'], freq: 0.95, min: 12, max: 30 },
+  { pool: () => [pick(dinnerNotes), amt(52, 0.6)], cat: ['food-dinner', '晚餐'], freq: 0.75, min: 18, max: 120 },
+  { pool: () => [pick(['奶茶', '瑞幸生椰拿铁', '咖啡续命', '喜茶']), amt(18, 0.4)], cat: ['food-snack', '零食饮料'], freq: 0.6, min: 8, max: 35 },
+  { pool: () => ['地铁通勤', 6], cat: ['transport-subway', '地铁上班'], freq: 0.7, min: 4, max: 12 },
+  { pool: () => [pick(taxiNotes), amt(34, 0.5)], cat: ['transport-taxi', '打车'], freq: 0.22, min: 18, max: 80 },
+  { pool: () => [pick(shopNotes), amt(96, 0.55)], cat: ['shopping-daily', '超市采购'], freq: 0.3, min: 30, max: 260 },
+  { pool: () => [pick(funNotes), amt(58, 0.6)], cat: [rnd() > 0.5 ? 'fun-movie' : 'fun-game', '娱乐'], freq: 0.18, min: 25, max: 150 },
+  { pool: () => [pick(['猫罐头', '猫砂', '猫条冻干', '猫粮补给']), amt(115, 0.5)], cat: ['pet-food', '猫粮'], freq: 0.12, min: 45, max: 260 },
+  { pool: () => [pick(['优衣库 换季', '淘宝 秋装', '球鞋 冲动消费']), amt(320, 0.6)], cat: ['shopping-cloth', '服饰'], freq: 0.08, min: 120, max: 900 },
+  { pool: () => [pick(['微信读书年卡', '买书 网易蜗牛', 'B站大会员']), amt(48, 0.5)], cat: ['study-book', '买书'], freq: 0.1, min: 18, max: 128 },
 ]
 
 interface NewTx {
@@ -90,8 +75,6 @@ interface NewTx {
   amount: number
   categoryId: string
   categoryName: string
-  accountId: string
-  memberId: string
   bookId: string
   date: string
   note?: string
@@ -115,8 +98,8 @@ function generateDailyBook(): Transaction[] {
     // 房租:每月 1 号
     if (dom === 1) {
       addTx(list, {
-        type: 'expense', amount: 3200, categoryId: 'housing-rent', categoryName: '房租',
-        accountId: 'icbc', memberId: 'u1', bookId: 'b1',
+        type: 'expense', amount: 3200, bookId: 'b1',
+        categoryId: 'housing-rent', categoryName: '房租',
         date: dstr(new Date(day.getFullYear(), day.getMonth(), 1, 9, 10)),
         note: '房租 月付',
       })
@@ -124,8 +107,8 @@ function generateDailyBook(): Transaction[] {
     // 水电物业:每月 5 号
     if (dom === 5) {
       addTx(list, {
-        type: 'expense', amount: amt(180, 0.3), categoryId: 'housing-utility', categoryName: '水电物业',
-        accountId: 'alipay', memberId: 'u1', bookId: 'b1',
+        type: 'expense', amount: amt(180, 0.3), bookId: 'b1',
+        categoryId: 'housing-utility', categoryName: '水电物业',
         date: dstr(new Date(day.getFullYear(), day.getMonth(), 5, 11, 0)),
         note: ym === 7 || ym === 8 ? '夏天空调费 有点吓人' : '水电燃气',
       })
@@ -133,8 +116,8 @@ function generateDailyBook(): Transaction[] {
     // 视频会员:每月 12 号
     if (dom === 12) {
       addTx(list, {
-        type: 'expense', amount: 25, categoryId: 'fun-video', categoryName: '视频会员',
-        accountId: 'wechat', memberId: 'u1', bookId: 'b1',
+        type: 'expense', amount: 25, bookId: 'b1',
+        categoryId: 'fun-video', categoryName: '视频会员',
         date: dstr(new Date(day.getFullYear(), day.getMonth(), 12, 8, 30)),
         note: '爱奇艺连续包月',
       })
@@ -142,8 +125,8 @@ function generateDailyBook(): Transaction[] {
     // 猫粮囤货:每月 18 号左右
     if (dom === 18) {
       addTx(list, {
-        type: 'expense', amount: amt(139, 0.35), categoryId: 'pet-food', categoryName: '猫粮',
-        accountId: 'icbc', memberId: 'u1', bookId: 'b1',
+        type: 'expense', amount: amt(139, 0.35), bookId: 'b1',
+        categoryId: 'pet-food', categoryName: '猫粮',
         date: dstr(new Date(day.getFullYear(), day.getMonth(), 18, 21, 0)),
         note: '猫粮 + 猫砂 囤货',
       })
@@ -151,8 +134,8 @@ function generateDailyBook(): Transaction[] {
     // 理发:每月一次
     if (dom === 26) {
       addTx(list, {
-        type: 'expense', amount: amt(68, 0.4), categoryId: 'shopping-daily', categoryName: '日用',
-        accountId: 'wechat', memberId: 'u1', bookId: 'b1',
+        type: 'expense', amount: amt(68, 0.4), bookId: 'b1',
+        categoryId: 'shopping-daily', categoryName: '日用',
         date: dstr(new Date(day.getFullYear(), day.getMonth(), 26, 19, 0)),
         note: '理发',
       })
@@ -162,15 +145,15 @@ function generateDailyBook(): Transaction[] {
     // 工资:每月 10 号
     if (dom === 10) {
       addTx(list, {
-        type: 'income', amount: amt(12800, 0.06), categoryId: 'salary', categoryName: '工资',
-        accountId: 'icbc', memberId: 'u1', bookId: 'b1',
+        type: 'income', amount: amt(12800, 0.06), bookId: 'b1',
+        categoryId: 'salary', categoryName: '工资',
         date: dstr(new Date(day.getFullYear(), day.getMonth(), 10, 10, 0)),
         note: ym === 1 ? '工资 + 年终奖尾款' : '工资 到账',
       })
       if (ym === 1) {
         addTx(list, {
-          type: 'income', amount: 26000, categoryId: 'salary', categoryName: '工资',
-          accountId: 'icbc', memberId: 'u1', bookId: 'b1',
+          type: 'income', amount: 26000, bookId: 'b1',
+        categoryId: 'salary', categoryName: '工资',
           date: dstr(new Date(day.getFullYear(), 0, 15, 10, 0)),
           note: '年终奖 🧨',
         })
@@ -179,8 +162,8 @@ function generateDailyBook(): Transaction[] {
     // 理财收益:每周一
     if (dow === 1) {
       addTx(list, {
-        type: 'income', amount: amt(42, 0.7), categoryId: 'invest', categoryName: '理财收益',
-        accountId: 'alipay', memberId: 'u1', bookId: 'b1',
+        type: 'income', amount: amt(42, 0.7), bookId: 'b1',
+        categoryId: 'invest', categoryName: '理财收益',
         date: dstr(new Date(day.getFullYear(), day.getMonth(), dom, 15, 0)),
         note: '基金收益',
       })
@@ -188,24 +171,24 @@ function generateDailyBook(): Transaction[] {
     // 偶发收入
     if (dom === 15 && rnd() < 0.5) {
       addTx(list, {
-        type: 'income', amount: amt(380, 0.5), categoryId: 'parttime', categoryName: '稿费',
-        accountId: 'alipay', memberId: 'u1', bookId: 'b1',
+        type: 'income', amount: amt(380, 0.5), bookId: 'b1',
+        categoryId: 'parttime', categoryName: '稿费',
         date: dstr(new Date(day.getFullYear(), day.getMonth(), 15, 14, 20)),
         note: '兼职稿费',
       })
     }
     if (dom === 2 && rnd() < 0.4) {
       addTx(list, {
-        type: 'income', amount: amt(88, 0.6), categoryId: 'refund', categoryName: '退款',
-        accountId: 'wechat', memberId: 'u1', bookId: 'b1',
+        type: 'income', amount: amt(88, 0.6), bookId: 'b1',
+        categoryId: 'refund', categoryName: '退款',
         date: dstr(new Date(day.getFullYear(), day.getMonth(), 2, 16, 40)),
         note: '退货退款',
       })
     }
     if (ym === 2 && dom === 9) {
       addTx(list, {
-        type: 'income', amount: 1200, categoryId: 'redpacket', categoryName: '红包',
-        accountId: 'wechat', memberId: 'u1', bookId: 'b1',
+        type: 'income', amount: 1200, bookId: 'b1',
+        categoryId: 'redpacket', categoryName: '红包',
         date: dstr(new Date(day.getFullYear(), 1, 9, 12, 0)),
         note: '长辈给的红包',
       })
@@ -215,16 +198,16 @@ function generateDailyBook(): Transaction[] {
     if (rnd() < 0.035) {
       const note = pick(socialNotes)
       addTx(list, {
-        type: 'expense', amount: amt(320, 0.7), categoryId: 'social-gift', categoryName: '人情',
-        accountId: 'wechat', memberId: rnd() > 0.7 ? 'u2' : 'u1', bookId: 'b1',
+        type: 'expense', amount: amt(320, 0.7), bookId: 'b1',
+        categoryId: 'social-gift', categoryName: '人情',
         date: dstr(new Date(day.getFullYear(), day.getMonth(), dom, 12 + Math.floor(rnd() * 8), Math.floor(rnd() * 60))),
         note,
       })
     }
     if (rnd() < 0.012) {
       addTx(list, {
-        type: 'expense', amount: amt(260, 0.4), categoryId: 'medical-drug', categoryName: '医疗',
-        accountId: 'icbc', memberId: 'u1', bookId: 'b1',
+        type: 'expense', amount: amt(260, 0.4), bookId: 'b1',
+        categoryId: 'medical-drug', categoryName: '医疗',
         date: dstr(new Date(day.getFullYear(), day.getMonth(), dom, 15, 30)),
         note: pick(['感冒药 维C', '体检复查', '超市 药品']),
       })
@@ -245,8 +228,6 @@ function generateDailyBook(): Transaction[] {
       addTx(list, {
         type: 'expense', amount: base,
         categoryId: p.cat[0], categoryName: p.cat[1],
-        accountId: p.acc,
-        memberId: rnd() > 0.82 ? 'u2' : 'u1',
         bookId: 'b1',
         date: dstr(t),
         note: name,
@@ -281,8 +262,8 @@ function generateDecorBook(): Transaction[] {
     addTx(list, {
       type: 'expense',
       amount: +(item[2] * (0.85 + rnd() * 0.3)).toFixed(2),
-      categoryId: 'custom-expense-decor', categoryName: item[0],
-      accountId: item[3], memberId: rnd() > 0.5 ? 'u2' : 'u1', bookId: 'b2',
+      bookId: 'b2',
+        categoryId: 'custom-expense-decor', categoryName: item[0],
       date: dstr(new Date(day.getFullYear(), day.getMonth(), day.getDate(), hour, 30)),
       note: item[1],
     })
@@ -299,8 +280,8 @@ function generateTravelBook(): Transaction[] {
   for (let m = 0; m < 9; m++) {
     const day = new Date(2026, 8, 8); day.setMonth(day.getMonth() - m)
     addTx(list, {
-      type: 'income', amount: 2000, categoryId: 'salary', categoryName: '工资',
-      accountId: 'icbc', memberId: 'u1', bookId: 'b3',
+      type: 'income', amount: 2000, bookId: 'b3',
+        categoryId: 'salary', categoryName: '工资',
       date: dstr(new Date(day.getFullYear(), day.getMonth(), 8, 9, 0)),
       note: '旅行基金定存',
     })
@@ -314,8 +295,8 @@ function generateTravelBook(): Transaction[] {
     const day = new Date(today); day.setDate(today.getDate() - 10 + s * 3)
     if (day > today) continue
     addTx(list, {
-      type: 'expense', amount: spends[s][1], categoryId: 'custom-expense-trip', categoryName: '旅行',
-      accountId: spends[s][2], memberId: 'u1', bookId: 'b3',
+      type: 'expense', amount: spends[s][1], bookId: 'b3',
+        categoryId: 'custom-expense-trip', categoryName: '旅行',
       date: dstr(new Date(day.getFullYear(), day.getMonth(), day.getDate(), 20, 10)),
       note: spends[s][0],
     })

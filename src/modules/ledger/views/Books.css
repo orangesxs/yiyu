@@ -54,20 +54,13 @@
   padding-top: 12px;
   border-top: 1px dashed var(--border-color);
 }
-.avatars { display: flex; align-items: center; }
-.mini-avatar {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: var(--bg-soft);
-  border: 2px solid var(--bg-card);
-  display: grid;
-  place-items: center;
-  font-size: 13px;
-  margin-left: -6px;
+.book-default { font-size: var(--fs-caption); color: var(--text-secondary); }
+.book-switch {
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+  transition: color var(--dur-base) ease, transform var(--dur-base) ease;
 }
-.mini-avatar:first-child { margin-left: 0; }
-.member-count { margin-left: 8px; font-size: var(--fs-caption); color: var(--text-secondary); }
+.book-card:hover .book-switch { color: var(--color-primary); transform: translateX(3px); }
 
 .icon-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .icon-pick {
@@ -82,19 +75,3 @@
 }
 .icon-pick:hover { border-color: var(--card-border-on-hover); }
 .icon-pick.active { border-color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 8%, transparent); }
-
-.invite-row { margin-bottom: 14px; display: flex; align-items: center; }
-.invite-opt { display: inline-flex; align-items: center; gap: 6px; }
-.opt-avatar { font-size: 14px; }
-.member-list { display: flex; flex-direction: column; }
-.member-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 0;
-  border-bottom: 1px dashed var(--border-color);
-}
-.m-avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--bg-soft); display: grid; place-items: center; font-size: 17px; }
-.m-name { font-size: 14px; min-width: 56px; }
-.m-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
-.role-tip { margin-top: 12px; font-size: var(--fs-caption); color: var(--text-secondary); line-height: 1.6; }

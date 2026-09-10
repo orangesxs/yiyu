@@ -2,7 +2,7 @@
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
-import { useUserStore } from '../../../shared/stores/user'
+import { useUserStore } from '@/shared/stores/user'
 
 const router = useRouter()
 const userStore = useUserStore()

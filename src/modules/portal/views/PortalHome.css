@@ -14,9 +14,9 @@
   pointer-events: none;
 }
 .g1 { width: 500px; height: 500px; background: var(--app-ledger); top: -180px; left: -100px; }
-.g2 { width: 420px; height: 420px; background: var(--app-notes); top: -140px; right: 8%; }
+.g2 { width: 420px; height: 420px; background: var(--app-admin); top: -140px; right: 8%; }
 
-/* 问候区:左问候 + 右个人名片 */
+/* 问候区 */
 .greet-wrap {
   display: flex;
   align-items: flex-start;
@@ -55,61 +55,13 @@
 .quote-mark { color: var(--color-primary); font-size: 18px; font-family: Georgia, serif; line-height: 1; }
 .quote-mark.end { font-size: 14px; align-self: flex-end; }
 
-/* 个人名片("我",不进应用卡栅格) */
-.me-card {
-  padding: 18px 22px;
-  cursor: pointer;
-  width: 300px;
-  flex-shrink: 0;
-}
-.me-head { display: flex; align-items: center; gap: 12px; }
-.me-avatar {
-  width: 46px;
-  height: 46px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--app-ledger), var(--app-notes));
-  display: grid;
-  place-items: center;
-  font-size: 22px;
-  flex-shrink: 0;
-}
-.me-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.me-name { font-size: 15px; font-weight: 600; }
-.me-bio {
-  font-size: var(--fs-caption);
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.me-stats {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px dashed var(--border-color);
-  font-size: var(--fs-caption);
-  color: var(--text-secondary);
-}
-.me-stats b { font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 0 2px; }
-.me-stats .sep { color: var(--border-strong); }
-.me-enter {
-  display: inline-block;
-  margin-top: 12px;
-  font-size: var(--fs-caption);
-  color: var(--text-secondary);
-  transition: color var(--dur-base) ease, transform var(--dur-base) ease;
-}
-.me-card:hover .me-enter { color: var(--color-primary); transform: translateX(3px); }
-
-/* 应用卡 */
+/* 应用卡(单卡栅格:仅记账本;max-width 保持与两卡时一致的视觉宽度) */
 .app-cards {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: 1fr;
   gap: var(--gap-module);
   margin-top: 30px;
-  max-width: 980px;
+  max-width: 480px;
 }
 
 .app-card {
@@ -153,8 +105,5 @@
 .entry-value { font-size: 19px; font-weight: 600; }
 
 @media (max-width: 768px) {
-  .app-cards { grid-template-columns: 1fr; }
-  /* 名片窄屏堆叠至问候语下方 */
-  .greet-wrap { flex-direction: column; gap: 18px; }
-  .me-card { width: 100%; }
+  .app-cards { grid-template-columns: 1fr; max-width: none; }
 }

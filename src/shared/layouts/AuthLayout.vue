@@ -37,7 +37,7 @@
   left: -160px;
 }
 .auth-glow--b {
-  background: var(--app-notes);
+  background: var(--app-admin);
   bottom: -260px;
   right: -180px;
 }

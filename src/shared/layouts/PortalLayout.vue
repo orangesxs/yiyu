@@ -9,6 +9,7 @@ const themeStore = useThemeStore()
 
 function onCommand(cmd: string | number | object) {
   if (cmd === 'profile') router.push('/profile')
+  if (cmd === 'admin') router.push('/admin/dashboard')
   if (cmd === 'logout') {
     userStore.logout()
     router.push('/auth/login')
@@ -45,6 +46,7 @@ function onCommand(cmd: string | number | object) {
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="profile">个人中心</el-dropdown-item>
+              <el-dropdown-item v-if="userStore.isAdmin" command="admin">后台管理</el-dropdown-item>
               <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -153,7 +155,7 @@ function onCommand(cmd: string | number | object) {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--app-ledger), var(--app-notes));
+  background: linear-gradient(135deg, var(--app-ledger), var(--app-admin));
   color: #fff;
   display: grid;
   place-items: center;

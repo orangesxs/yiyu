@@ -9,7 +9,7 @@ import {
 } from 'echarts/components'
 import VChart from 'vue-echarts'
 import { useLedgerStore } from '../stores/ledger'
-import { mockToday } from '../../../shared/types/common'
+import { mockToday } from '@/shared/types/common'
 import type { TxType, Transaction } from '../types'
 
 use([CanvasRenderer, PieChart, LineChart, BarChart, ScatterChart, GridComponent, TooltipComponent, LegendComponent, VisualMapComponent, CalendarComponent])

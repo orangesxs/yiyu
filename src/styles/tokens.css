@@ -28,9 +28,9 @@
   --color-expense: #e5484d;
   --color-warning: #f59b0e;
 
-  /* 应用身份色 */
+  /* 应用身份色(--app-admin 管理后台:石板灰,系统/控制台语义,与生活应用的彩色区分) */
   --app-ledger: #409eff;
-  --app-notes: #7c6af0;
+  --app-admin: #64748b;
 
   /* 动效 */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);

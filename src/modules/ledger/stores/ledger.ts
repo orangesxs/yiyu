@@ -2,13 +2,12 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import {
   generateTransactions, expenseCategories, incomeCategories,
-  accounts as mockAccounts, books as mockBooks, members,
+  books as mockBooks,
 } from '../mock/ledger'
 import type { Book, Category, DailyTotal, RangeStats, Transaction, TxType } from '../types'
 
 export const useLedgerStore = defineStore('ledger', () => {
   const transactions = ref<Transaction[]>(generateTransactions())
-  const accounts = ref(mockAccounts.map((a) => ({ ...a })))
   const books = ref<Book[]>(mockBooks.map((b) => ({ ...b })))
   const currentBookId = ref('b1')
   /* 分类(响应式,支持自定义新增) */
@@ -83,17 +82,6 @@ export const useLedgerStore = defineStore('ledger', () => {
     return groups
   })
 
-  /* 账户余额 = 期初 + 收 − 支 */
-  const accountBalances = computed<Record<string, number>>(() => {
-    const map: Record<string, number> = {}
-    for (const a of accounts.value) map[a.id] = a.initial
-    for (const t of transactions.value) {
-      if (t.type === 'income') map[t.accountId] += t.amount
-      if (t.type === 'expense') map[t.accountId] -= t.amount
-    }
-    return map
-  })
-
   /* 分类统计(报表用,某月某类型) */
   function categoryStats(ym: string, type: TxType = 'expense') {
     const list = bookTransactions.value.filter(
@@ -131,17 +119,7 @@ export const useLedgerStore = defineStore('ledger', () => {
     currentBookId.value = id
   }
   function addBook(b: { name: string; icon: string }) {
-    books.value.push({ ...b, id: 'b' + Date.now(), monthExpense: 0, isDefault: false, memberIds: ['u1'] })
-  }
-
-  /* 从好友邀请入账本:memberIds 与 members 平铺数组都要写,否则成员列表不渲染、角色不可改 */
-  function addMembers(bookId: string, friends: { id: string; name: string; avatar: string }[]) {
-    const book = books.value.find((b) => b.id === bookId)
-    if (!book) return
-    for (const f of friends) {
-      if (!book.memberIds.includes(f.id)) book.memberIds.push(f.id)
-      if (!members.some((m) => m.id === f.id)) members.push({ id: f.id, name: f.name, avatar: f.avatar, role: 'member' })
-    }
+    books.value.push({ ...b, id: 'b' + Date.now(), monthExpense: 0, isDefault: false })
   }
 
   const currentBook = computed(() =>
@@ -149,10 +127,10 @@ export const useLedgerStore = defineStore('ledger', () => {
   )
 
   return {
-    transactions, accounts, books, members, categories,
-    currentBookId, currentBook, bookTransactions, groupedByDay, accountBalances,
+    transactions, books, categories,
+    currentBookId, currentBook, bookTransactions, groupedByDay,
     monthStats, rangeStats, dailyTotals, categoryStats,
     addTransaction, updateTransaction, removeTransaction,
-    switchBook, addBook, addMembers, addCustomCategory, removeCustomCategory,
+    switchBook, addBook, addCustomCategory, removeCustomCategory,
   }
 })

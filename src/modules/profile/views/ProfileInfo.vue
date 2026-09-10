@@ -1,17 +1,19 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { reactive, ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { useProfileStore } from '../stores/profile'
-import { useLedgerStore } from '../../ledger/stores/ledger'
+import { mockToday } from '@/shared/types/common'
 import { avatarOptions } from '../types'
 import type { Gender } from '../types'
 
 const profileStore = useProfileStore()
-const ledgerStore = useLedgerStore()
 
-/* 参与账本数:当前登录人出现在成员中的账本 */
-const joinedBooks = ledgerStore.books.filter((b) => b.memberIds.includes(profileStore.profile.id)).length
+/* 已加入天数:从档案 joinedAt 到 mock 基准日(含首尾) */
+const joinedDays = computed(() => {
+  const start = new Date(profileStore.profile.joinedAt + 'T00:00:00')
+  return Math.max(1, Math.floor((mockToday.getTime() - start.getTime()) / 86400000) + 1)
+})
 
 /* 编辑表单(头像宫格 + 各字段),保存写回 store */
 const form = reactive({
@@ -74,9 +76,7 @@ function savePwd() {
         <span class="bio">{{ profileStore.profile.bio || '还没有签名' }}</span>
       </div>
       <div class="head-stats num">
-        <div class="stat"><span class="v">126</span><span class="k">已加入/天</span></div>
-        <div class="stat"><span class="v">{{ profileStore.friendCount }}</span><span class="k">好友/位</span></div>
-        <div class="stat"><span class="v">{{ joinedBooks }}</span><span class="k">参与账本/本</span></div>
+        <div class="stat"><span class="v">{{ joinedDays }}</span><span class="k">已加入/天</span></div>
       </div>
     </div>
 
@@ -175,7 +175,7 @@ function savePwd() {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--app-ledger), var(--app-notes));
+  background: linear-gradient(135deg, var(--app-ledger), var(--app-admin));
   font-size: 26px;
   display: grid;
   place-items: center;

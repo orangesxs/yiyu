@@ -1,16 +1,10 @@
 <script setup lang="ts">
-import { useUserStore } from '../../../shared/stores/user'
-import { useLedgerStore } from '../../ledger/stores/ledger'
-import { useNotesStore } from '../../notes/stores/notes'
-import { useTodosStore } from '../../notes/stores/todos'
-import { useProfileStore } from '../../profile/stores/profile'
-import { mockToday } from '../../../shared/types/common'
+import { useUserStore } from '@/shared/stores/user'
+import { useLedgerStore } from '@/modules/ledger/stores/ledger'
+import { mockToday } from '@/shared/types/common'
 
 const userStore = useUserStore()
 const ledgerStore = useLedgerStore()
-const notesStore = useNotesStore()
-const todosStore = useTodosStore()
-const profileStore = useProfileStore()
 
 /* 问候 */
 const hour = mockToday.getHours()
@@ -20,10 +14,6 @@ const dailyQuote = '把日子过成自己喜欢的样子,是一件值得练习�
 
 /* 应用摘要数据 */
 const monthStats = ledgerStore.monthStats('2026-09')
-const openTodos = todosStore.counts.todo + todosStore.counts.doing + todosStore.counts.overdue
-
-/* 个人名片统计:参与账本数 = 当前人出现在成员中的账本 */
-const joinedBooks = ledgerStore.books.filter((b) => b.memberIds.includes(profileStore.profile.id)).length
 
 interface AppEntry { label: string; value: string; cls: string }
 interface AppCard {
@@ -49,18 +39,6 @@ const apps: AppCard[] = [
     ],
     to: '/ledger/transactions',
   },
-  {
-    key: 'notes',
-    icon: '📝',
-    name: '记事本',
-    sub: '随手记下,不再忘记',
-    color: 'var(--app-notes)',
-    entries: [
-      { label: '笔记', value: `${notesStore.notes.length} 篇`, cls: '' },
-      { label: '待办', value: `${openTodos} 项`, cls: '' },
-    ],
-    to: '/notes/list',
-  },
 ]
 </script>
 
@@ -70,7 +48,7 @@ const apps: AppCard[] = [
     <div class="portal-glow g1"></div>
     <div class="portal-glow g2"></div>
 
-    <!-- 问候区(左问候 + 右个人名片) -->
+    <!-- 问候区 -->
     <section class="greet-wrap rise-in">
       <div class="greet">
         <h1>{{ greeting }},{{ userStore.user?.nickname }} <span class="wave">👋</span></h1>
@@ -80,23 +58,6 @@ const apps: AppCard[] = [
           <span>{{ dailyQuote }}</span>
           <span class="quote-mark end">”</span>
         </div>
-      </div>
-
-      <!-- 个人名片:语义是"我"而非应用,不进应用卡栅格 -->
-      <div class="yiyu-card yiyu-card--hover me-card" @click="$router.push('/profile')">
-        <div class="me-head">
-          <span class="me-avatar">{{ profileStore.profile.avatar }}</span>
-          <div class="me-info">
-            <span class="me-name">{{ profileStore.profile.nickname }}</span>
-            <span class="me-bio">{{ profileStore.profile.bio || '完善资料,让大家更了解你' }}</span>
-          </div>
-        </div>
-        <div class="me-stats num">
-          <span>好友 <b>{{ profileStore.friendCount }}</b> 位</span>
-          <span class="sep">·</span>
-          <span>参与账本 <b>{{ joinedBooks }}</b> 本</span>
-        </div>
-        <span class="me-enter">进入个人中心 →</span>
       </div>
     </section>
 

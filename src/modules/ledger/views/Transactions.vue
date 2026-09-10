@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { useUserStore } from '../../../shared/stores/user'
 import { useLedgerStore } from '../stores/ledger'
+import { mockNowStr } from '@/shared/types/common'
 import type { Transaction, TxType, Category } from '../types'
 
 const store = useLedgerStore()
-const userStore = useUserStore()
 
 /* 当前月份 */
 const month = ref('2026-09')
@@ -50,20 +49,14 @@ const form = reactive({
   type: 'expense' as TxType,
   amount: null as number | null,
   categoryId: '',
-  date: nowStr(),
+  date: mockNowStr(),
   note: '',
   bookId: store.currentBookId,
 })
 
-function nowStr() {
-  const d = new Date()
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
-}
-
 function openDrawer() {
   editingId.value = null
-  Object.assign(form, { type: 'expense', amount: null, categoryId: '', date: nowStr(), note: '', bookId: store.currentBookId })
+  Object.assign(form, { type: 'expense', amount: null, categoryId: '', date: mockNowStr(), note: '', bookId: store.currentBookId })
   drawer.value = true
 }
 function editRow(t: Transaction) {
@@ -125,8 +118,6 @@ function save() {
   const payload = {
     type: form.type, amount: +form.amount,
     categoryId: form.categoryId, categoryName: cat?.name || '',
-    accountId: 'alipay',
-    memberId: userStore.user?.id || 'u1',
     date: form.date, note: form.note,
     bookId: form.bookId,
   }

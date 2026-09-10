@@ -7,9 +7,8 @@ export const profileRoutes: RouteRecordRaw[] = [
     component: () => import('../../shared/layouts/AppShellLayout.vue'),
     meta: { app: 'profile' },
     children: [
-      { path: '', redirect: '/profile/friends' },
+      { path: '', redirect: '/profile/info' },
       { path: 'info', name: 'profile-info', component: () => import('./views/ProfileInfo.vue'), meta: { app: 'profile', title: '基本信息', requiresAuth: true } },
-      { path: 'friends', name: 'profile-friends', component: () => import('./views/ProfileFriends.vue'), meta: { app: 'profile', title: '我的好友', requiresAuth: true } },
     ],
   },
 ]

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '../stores/user'
 import { useThemeStore } from '../stores/theme'
@@ -19,7 +19,7 @@ interface ShellApp {
   menus: ShellMenu[]
 }
 
-const apps: Record<'ledger' | 'notes' | 'profile', ShellApp> = {
+const apps: Record<'ledger' | 'profile' | 'admin', ShellApp> = {
   ledger: {
     name: '记账本',
     sub: '把每一笔都记得清楚',
@@ -31,25 +31,24 @@ const apps: Record<'ledger' | 'notes' | 'profile', ShellApp> = {
       { path: '/ledger/books', label: '账本管理', elIcon: 'Notebook' },
     ],
   },
-  notes: {
-    name: '记事本',
-    sub: '随手记下,不再忘记',
-    icon: '📝',
-    color: 'var(--app-notes)',
-    menus: [
-      { path: '/notes/list', label: '笔记', elIcon: 'Document' },
-      { path: '/notes/todos', label: '待办提醒', elIcon: 'AlarmClock' },
-      { path: '/notes/trash', label: '回收站', elIcon: 'Delete' },
-    ],
-  },
   profile: {
     name: '个人中心',
     sub: '我是谁,与谁同行',
     icon: '👤',
     color: 'var(--text-secondary)',
     menus: [
-      { path: '/profile/friends', label: '我的好友', elIcon: 'Avatar' },
       { path: '/profile/info', label: '基本信息', elIcon: 'User' },
+    ],
+  },
+  admin: {
+    name: '管理后台',
+    sub: '守好一隅的每个角落',
+    icon: '🛠️',
+    color: 'var(--app-admin)',
+    menus: [
+      { path: '/admin/dashboard', label: '数据概览', elIcon: 'Odometer' },
+      { path: '/admin/users', label: '用户管理', elIcon: 'UserFilled' },
+      { path: '/admin/logs', label: '系统日志', elIcon: 'List' },
     ],
   },
 }
@@ -58,17 +57,40 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const themeStore = useThemeStore()
-const collapsed = ref(false)
-const drawer = ref(false) // 窄屏抽屉(与 collapsed 同一个按钮切换)
+const collapsed = ref(false) // 宽屏:侧栏折叠为纯图标
+const drawer = ref(false) // 窄屏:侧栏抽屉开合(抽屉固定纯图标)
+
+// 窄屏判定:侧栏切换按钮从"折叠"变为"抽屉",抽屉内只显示图标
+const narrowMq = window.matchMedia('(max-width: 768px)')
+const isNarrow = ref(narrowMq.matches)
+function syncNarrow() {
+  const now = narrowMq.matches
+  if (now === isNarrow.value) return
+  isNarrow.value = now
+  if (now) collapsed.value = false // 回到宽屏时侧栏保持展开
+  else drawer.value = false // 回到窄屏时收起抽屉
+}
+// resize 兜底:部分内嵌环境不派发 matchMedia change 事件
+narrowMq.addEventListener('change', syncNarrow)
+window.addEventListener('resize', syncNarrow)
+onUnmounted(() => {
+  narrowMq.removeEventListener('change', syncNarrow)
+  window.removeEventListener('resize', syncNarrow)
+})
+
 function toggleSide() {
-  collapsed.value = !collapsed.value
-  drawer.value = !drawer.value
+  syncNarrow() // 防止事件未派发导致模式判断过期
+  if (isNarrow.value) drawer.value = !drawer.value
+  else collapsed.value = !collapsed.value
 }
 
 const app = computed(() => apps[route.meta.app ?? 'ledger'])
+// 窄屏顶栏抽屉开关的提示文案(宽屏的展开/收起按钮已移入侧栏底部)
+const sideTooltip = computed(() => (drawer.value ? '收起菜单' : '展开菜单'))
 
 function onCommand(cmd: string | number | object) {
   if (cmd === 'profile') router.push('/profile')
+  if (cmd === 'admin') router.push('/admin/dashboard')
   if (cmd === 'logout') {
     userStore.logout()
     router.push('/auth/login')
@@ -80,14 +102,14 @@ function onCommand(cmd: string | number | object) {
   <div class="shell">
     <header class="shell-topbar">
       <div class="shell-left">
-        <el-tooltip :content="collapsed ? '展开侧栏' : '收起侧栏'" placement="bottom">
+        <el-tooltip v-if="isNarrow" :content="sideTooltip" placement="bottom">
           <button class="icon-btn" @click="toggleSide">
-            <el-icon :class="{ flip: collapsed }"><Expand /></el-icon>
+            <el-icon :class="{ flip: drawer }"><Expand /></el-icon>
           </button>
         </el-tooltip>
-        <button class="back-btn" @click="router.push('/')">
-          <el-icon><ArrowLeft /></el-icon>
-          <span class="back-text">广场</span>
+        <!-- 窄屏:返回广场留在顶栏;宽屏隐藏(移入侧栏底部) -->
+        <button v-if="isNarrow" class="icon-btn" title="返回广场" @click="router.push('/')">
+          <el-icon><HomeFilled /></el-icon>
         </button>
         <span class="app-badge" :style="{ background: `color-mix(in srgb, ${app.color} 14%, transparent)`, color: app.color }">{{ app.icon }}</span>
         <div class="app-title">
@@ -109,6 +131,7 @@ function onCommand(cmd: string | number | object) {
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="profile">个人中心</el-dropdown-item>
+              <el-dropdown-item v-if="userStore.isAdmin" command="admin">后台管理</el-dropdown-item>
               <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -117,19 +140,34 @@ function onCommand(cmd: string | number | object) {
     </header>
 
     <div class="shell-body">
+      <!-- 窄屏抽屉遮罩:点击空白处收起(仅 max-width:768px 媒体查询内渲染生效) -->
+      <div class="shell-mask" :class="{ show: drawer }" @click="drawer = false"></div>
       <aside class="shell-aside" :class="{ collapsed, open: drawer }">
         <nav class="shell-nav">
           <router-link
             v-for="m in app.menus"
             :key="m.path"
             :to="m.path"
+            :title="collapsed || isNarrow ? m.label : undefined"
             class="nav-item"
             :class="{ active: route.path === m.path }"
           >
             <el-icon class="nav-icon"><component :is="m.elIcon" /></el-icon>
-            <span v-show="!collapsed" class="nav-label">{{ m.label }}</span>
+            <span v-show="!(collapsed || isNarrow)" class="nav-label">{{ m.label }}</span>
           </router-link>
         </nav>
+
+        <!-- 宽屏:展开/收起 + 返回广场固定在侧栏底部;窄屏此处隐藏,改由顶栏图标开抽屉 -->
+        <div class="side-footer">
+          <button class="nav-item side-toggle" :title="collapsed ? '展开侧栏' : '收起侧栏'" @click="collapsed = !collapsed">
+            <el-icon class="nav-icon" :class="{ flip: collapsed }"><Expand /></el-icon>
+            <span v-show="!collapsed" class="nav-label">收起侧栏</span>
+          </button>
+          <router-link to="/" class="nav-item side-back" title="返回广场">
+            <el-icon class="nav-icon"><HomeFilled /></el-icon>
+            <span v-show="!collapsed" class="nav-label">返回广场</span>
+          </router-link>
+        </div>
       </aside>
 
       <main class="shell-main">
@@ -167,24 +205,6 @@ function onCommand(cmd: string | number | object) {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.back-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-card);
-  color: var(--text-regular);
-  border-radius: 999px;
-  padding: 6px 14px 6px 10px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all var(--dur-base) ease;
-}
-.back-btn:hover {
-  color: var(--color-primary);
-  border-color: var(--card-border-on-hover);
 }
 
 .app-badge {
@@ -242,7 +262,7 @@ function onCommand(cmd: string | number | object) {
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--app-ledger), var(--app-notes));
+  background: linear-gradient(135deg, var(--app-ledger), var(--app-admin));
   color: #fff;
   display: grid;
   place-items: center;
@@ -253,6 +273,28 @@ function onCommand(cmd: string | number | object) {
   flex: 1;
   display: flex;
   min-height: 0;
+  position: relative;
+}
+
+/* 抽屉遮罩:宽屏不渲染,窄屏抽屉打开时盖住内容区 */
+.shell-mask {
+  display: none;
+}
+@media (max-width: 768px) {
+  .shell-mask {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 25; /* 低于侧栏(30)、高于内容 */
+    background: rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-sidebar) ease;
+  }
+  .shell-mask.show {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .shell-aside {
@@ -268,6 +310,25 @@ function onCommand(cmd: string | number | object) {
 }
 .shell-aside.collapsed {
   width: 64px;
+}
+
+/* 侧栏底部操作区:推向底部,与菜单之间加分隔线 */
+.side-footer {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.side-toggle, .side-back {
+  width: 100%;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  text-align: left;
 }
 
 .shell-nav {
@@ -301,7 +362,7 @@ function onCommand(cmd: string | number | object) {
   justify-content: center;
 }
 
-.icon-btn .flip { transform: rotate(180deg); }
+.flip { transform: rotate(180deg); }
 
 .shell-main {
   flex: 1;
@@ -317,8 +378,10 @@ function onCommand(cmd: string | number | object) {
 
 @media (max-width: 768px) {
   .shell-topbar { padding: 0 14px; }
-  .app-sub, .back-text { display: none; }
-  .back-btn { padding: 6px 9px; }
+  .app-sub { display: none; }
+
+  /* 窄屏:底部操作区隐藏(抽屉是纯图标条,返回广场走顶栏) */
+  .side-footer { display: none; }
 
   .shell-aside {
     position: fixed;
@@ -326,7 +389,8 @@ function onCommand(cmd: string | number | object) {
     top: 60px;
     bottom: 0;
     z-index: 30;
-    width: 200px !important;
+    /* 窄屏抽屉固定为纯图标窄条 */
+    width: 64px !important;
     transform: translateX(-100%);
     transition: transform var(--dur-sidebar) ease;
     box-shadow: var(--shadow-hover);
@@ -334,8 +398,8 @@ function onCommand(cmd: string | number | object) {
   .shell-aside.open {
     transform: translateX(0);
   }
-  .shell-aside.collapsed .nav-item {
-    justify-content: flex-start;
+  .shell-aside .nav-item {
+    justify-content: center;
   }
 }
 </style>
