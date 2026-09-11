@@ -20,7 +20,8 @@ export interface ApiEnvelope<T> {
   code: number
   message: string
   data: T | null
-  timestamp: string
+  /** 毫秒时间戳 */
+  timestamp: number
 }
 
 /**
@@ -56,6 +57,8 @@ const unwrap = (res: { data: unknown }): unknown => {
       ElMessage.error(body.message || '请求失败')
       return Promise.reject(new Error(body.message))
     }
+    // 成功:按 success 判定,message 有值才提示(后端成功默认为空串)
+    if (body.message) ElMessage.success(body.message)
     return body.data
   }
   return body

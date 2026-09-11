@@ -106,7 +106,9 @@ export const ledgerApi = {
   listBooks: () => get<BookDto[]>('/ledger/books'),
   createBook: (data: { name: string; icon: string }) => post<BookDto>('/ledger/books', data),
   listCategories: (type?: 'expense' | 'income') =>
-    get<CategoryDto[]>('/ledger/categories', type ? { type } : undefined),
+    get<CategoryDto[] | { expense: CategoryDto[]; income: CategoryDto[] }>(
+      '/ledger/categories', type ? { type } : undefined,
+    ),
   createCategory: (data: { type: 'expense' | 'income'; name: string; icon: string }) =>
     post<CategoryDto>('/ledger/categories', data),
   removeCategory: (id: string) => del<{ ok: boolean }>(`/ledger/categories/${id}`),
@@ -114,6 +116,9 @@ export const ledgerApi = {
     bookId: string
     from?: string
     to?: string
+    type?: 'expense' | 'income'
+    categoryId?: string
+    keyword?: string
     page?: number
     pageSize?: number
   }) => get<TransactionPage>('/ledger/transactions', params),
