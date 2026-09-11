@@ -4,7 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useLedgerStore } from '../stores/ledger'
 import { nowStr } from '@/shared/types/common'
 import type { LedgerReportDto } from '@/shared/api'
-import type { Transaction, TxType, Category } from '../types'
+import type { Transaction, TxType } from '../types'
 
 const store = useLedgerStore()
 
@@ -55,22 +55,20 @@ watch([month, () => store.currentBookId], () => {
   if (store.currentBookId) loadMonth()
 }, { immediate: true })
 
-/* 筛选 */
-const filters = reactive({ type: '' as '' | TxType, categoryId: '', keyword: '' })
+/* 筛选(服务端过滤):条件变化 300ms 防抖后重拉第一页;月份/账本变化走下方 watch */
+const filters = store.filters
+let filterTimer: ReturnType<typeof setTimeout> | null = null
+watch(
+  () => [filters.type, filters.categoryId, filters.keyword] as const,
+  () => {
+    if (filterTimer) clearTimeout(filterTimer)
+    filterTimer = setTimeout(() => {
+      if (store.currentBookId) loadMonth()
+    }, 300)
+  },
+)
 
-const filteredGroups = computed(() => {
-  return store.groupedByDay
-    .map((g) => ({
-      ...g,
-      items: g.items.filter((t) => {
-        if (filters.type && t.type !== filters.type) return false
-        if (filters.categoryId && t.categoryId !== filters.categoryId) return false
-        if (filters.keyword && !(t.note || '').includes(filters.keyword)) return false
-        return true
-      }),
-    }))
-    .filter((g) => g.items.length)
-})
+const filteredGroups = computed(() => store.groupedByDay)
 
 function catIcon(t: Transaction) {
   const pool = t.type === 'income' ? store.categories.income : store.categories.expense
@@ -110,7 +108,7 @@ function editRow(t: Transaction) {
 
 /* 分类池:根分类直接选(自定义分类平铺) */
 interface FlatCat { id: string; name: string; icon: string; custom?: boolean }
-const catPool = computed<Category[]>(() =>
+const catPool = computed(() =>
   form.type === 'income' ? store.categories.income : store.categories.expense
 )
 const flatCats = computed<FlatCat[]>(() =>

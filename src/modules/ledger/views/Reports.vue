@@ -58,7 +58,6 @@ function rangeOf(off: number): DateRange {
   return { start, end }
 }
 const curRange = computed(() => rangeOf(offset.value))
-const prevRange = computed(() => rangeOf(offset.value - 1))
 
 const rangeLabel = computed(() => {
   const { start, end } = curRange.value
@@ -78,10 +77,8 @@ function stepRange(dir: number) {
   offset.value += dir
 }
 
-/* ---- 统计(服务端 reports 接口;本期 + 上期 + 全量共三份) ---- */
+/* ---- 统计(服务端 reports 接口,只拉当前所选区间) ---- */
 const report = ref<LedgerReportDto | null>(null)
-const prevReport = ref<LedgerReportDto | null>(null)
-const bookTotalReport = ref<LedgerReportDto | null>(null)
 const reportLoading = ref(false)
 
 async function fetchRange(r: DateRange): Promise<LedgerReportDto> {
@@ -91,43 +88,19 @@ async function refresh() {
   if (!bookId.value) return
   reportLoading.value = true
   try {
-    const [cur, prev] = await Promise.all([
-      fetchRange(curRange.value),
-      // 上期对照仅在本期(offset=0)展示
-      offset.value === 0 ? fetchRange(prevRange.value) : Promise.resolve(null),
-    ])
-    report.value = cur
-    prevReport.value = prev
+    report.value = await fetchRange(curRange.value)
   } catch {
     /* 请求层已提示;报表保持上次数据 */
   } finally {
     reportLoading.value = false
   }
 }
-/* 账本全量总计(不随时间段变化):从今年 1 月 1 日到今日的区间聚合 */
-async function refreshBookTotal() {
-  if (!bookId.value) return
-  try {
-    bookTotalReport.value = await store.fetchReports(
-      `${today.getFullYear()}-01-01`, ymd(today), bookId.value,
-    )
-  } catch {
-    /* 忽略 */
-  }
-}
-refreshBookTotal()
-watch(bookId, () => refreshBookTotal())
 
-watch([type, range, offset, bookId], () => refresh())
+watch([range, offset, bookId], () => refresh())
 
 interface Stats { income: number; expense: number; balance: number; count: number }
 const emptyStats: Stats = { income: 0, expense: 0, balance: 0, count: 0 }
 const stats = computed<Stats>(() => report.value?.stats ?? emptyStats)
-const prevStats = computed<Stats>(() => prevReport.value?.stats ?? emptyStats)
-function pct(cur: number, prev: number): number | null {
-  if (!prev) return null
-  return Math.round(((cur - prev) / prev) * 100)
-}
 
 /* 当前维度取值 */
 const isTotal = computed(() => type.value === 'total')
@@ -138,9 +111,6 @@ const typeKey = computed<'income' | 'expense' | 'balance'>(() =>
   type.value === 'income' ? 'income' : type.value === 'expense' ? 'expense' : 'balance'
 )
 const typeValue = computed(() => stats.value[typeKey.value])
-const prevTypeValue = computed(() => prevStats.value[typeKey.value])
-const diffPct = computed(() => pct(typeValue.value, prevTypeValue.value))
-const diffAbs = computed(() => typeValue.value - prevTypeValue.value)
 
 /* 日均 */
 const dayCount = computed(() => {
@@ -156,8 +126,8 @@ const avgText = computed(() => {
   return '¥' + (Math.abs(v) >= 100 ? Math.round(v).toLocaleString() : v.toFixed(2))
 })
 
-/* 总计(当前账本全部流水,不随时间段变化) */
-const bookTotal = computed<Stats>(() => bookTotalReport.value?.stats ?? emptyStats)
+/* 总计(当前账本,年维度=本年区间即年累计;其他维度展示区间结余) */
+const bookTotal = computed<Stats>(() => report.value?.stats ?? emptyStats)
 
 /* ---- 趋势图(周/月=按日,年=按月;total=收支相抵单线) ---- */
 /* 服务端 daily/monthly → 视图序列(补齐区间内每一天/每一月为 0) */
@@ -198,20 +168,18 @@ const trendOption = computed(() => {
   const axisColor = '#909399'
   const splitColor = 'rgba(144,147,153,0.18)'
   const cIn = '#18A058', cOut = '#E5484D'
-  let labels: string[] = [], main: number[] = [], other: number[] | null = null
+  let labels: string[] = [], main: number[] = []
 
   if (range.value === 'year') {
     const year = curRange.value.start.getFullYear()
     labels = Array.from({ length: 12 }, (_, i) => `${i + 1}月`)
     main = monthlySeries(year, report.value)
-    if (offset.value === 0) other = monthlySeries(year - 1, prevReport.value)
   } else {
     const { start, end } = curRange.value
     const days: string[] = []
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) days.push(ymd(d))
     labels = days.map((k) => k.slice(5))
     main = dailySeries(curRange.value, report.value)
-    if (offset.value === 0) other = dailySeries(prevRange.value, prevReport.value)
   }
 
   const series: TrendSeries[] = [{
@@ -225,26 +193,13 @@ const trendOption = computed(() => {
     areaStyle: { opacity: isTotal.value ? 0 : 0.12 },
     color: isTotal.value ? '#7C6AF0' : type.value === 'income' ? cIn : cOut,
   }]
-  // 本期视图追加上一期对照虚线(服务端已按上期区间真实取数)
-  if (other) {
-    series.push({
-      name: '上期',
-      type: 'line',
-      smooth: true,
-      symbol: 'none',
-      data: other,
-      lineStyle: { width: 1.5, type: 'dashed', opacity: 0.55 },
-      color: '#909399',
-    })
-  }
 
   return {
     tooltip: {
       trigger: 'axis',
       formatter: (ps: { marker: string; seriesName: string; axisValue: string; value: number }[]) => ps.map((p) => `${p.marker}${p.seriesName} ${p.axisValue}<br/>¥${(+p.value).toLocaleString()}`).join('<br/>'),
     },
-    legend: other ? { top: 0, right: 0, itemWidth: 14, textStyle: { color: axisColor, fontSize: 11 } } : undefined,
-    grid: { left: 56, right: 20, top: other ? 34 : 20, bottom: 28 },
+    grid: { left: 56, right: 20, top: 20, bottom: 28 },
     xAxis: { type: 'category', data: labels, boundaryGap: false, axisLine: { lineStyle: { color: splitColor } }, axisLabel: { color: axisColor, fontSize: 11, hideOverlap: true } },
     yAxis: { type: 'value', splitLine: { lineStyle: { color: splitColor } }, axisLabel: { color: axisColor, formatter: (v: number) => (Math.abs(v) >= 10000 ? v / 10000 + 'w' : v) } },
     series,
@@ -456,46 +411,21 @@ function fmtCell(v: number) {
         <span class="stat-num num main-num" :class="type === 'income' ? 'money-in' : type === 'expense' ? 'money-out' : ''">
           ¥{{ Math.abs(typeValue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
         </span>
-        <span class="sum-sub num">
-          <template v-if="diffPct === null">上期无数据</template>
-          <template v-else-if="diffPct === 0">与上期持平</template>
-          <template v-else>
-            较上期
-            <b :class="diffPct > 0 ? 'up' : 'down'">{{ diffPct > 0 ? '↑' : '↓' }} {{ Math.abs(diffPct) }}%</b>
-            <span class="diff-abs">({{ diffAbs >= 0 ? '+' : '−' }}¥{{ Math.abs(diffAbs).toLocaleString(undefined, { maximumFractionDigits: 0 }) }})</span>
-          </template>
-        </span>
         <span class="sum-faint num">日均 ¥{{ avgText.replace('¥', '') }} · {{ stats.count }} 笔</span>
       </div>
 
       <div class="yiyu-card stat-card" :class="{ dim: type === 'income' }">
         <span class="sum-label">支出</span>
         <span class="stat-num money-out">¥{{ stats.expense.toLocaleString(undefined, { maximumFractionDigits: 2 }) }}</span>
-        <span class="sum-sub num">
-          <template v-if="pct(stats.expense, prevStats.expense) === null">上期无数据</template>
-          <template v-else>
-            上期 ¥{{ prevStats.expense.toLocaleString(undefined, { maximumFractionDigits: 0 }) }}
-            · {{ pct(stats.expense, prevStats.expense) }}%{{ stats.expense - prevStats.expense >= 0 ? '↑' : '↓' }}
-          </template>
-        </span>
-        <div class="mini-bar"><i class="out" :style="{ width: Math.min(100, (stats.expense / Math.max(stats.expense, prevStats.expense, 1)) * 100) + '%' }"></i><i class="out prev" :style="{ width: Math.min(100, (prevStats.expense / Math.max(stats.expense, prevStats.expense, 1)) * 100) + '%' }"></i></div>
       </div>
 
       <div class="yiyu-card stat-card" :class="{ dim: type === 'expense' }">
         <span class="sum-label">收入</span>
         <span class="stat-num money-in">¥{{ stats.income.toLocaleString(undefined, { maximumFractionDigits: 2 }) }}</span>
-        <span class="sum-sub num">
-          <template v-if="pct(stats.income, prevStats.income) === null">上期无数据</template>
-          <template v-else>
-            上期 ¥{{ prevStats.income.toLocaleString(undefined, { maximumFractionDigits: 0 }) }}
-            · {{ pct(stats.income, prevStats.income) }}%{{ stats.income - prevStats.income >= 0 ? '↑' : '↓' }}
-          </template>
-        </span>
-        <div class="mini-bar"><i class="inn" :style="{ width: Math.min(100, (stats.income / Math.max(stats.income, prevStats.income, 1)) * 100) + '%' }"></i><i class="inn prev" :style="{ width: Math.min(100, (prevStats.income / Math.max(stats.income, prevStats.income, 1)) * 100) + '%' }"></i></div>
       </div>
 
       <div class="yiyu-card stat-card stat-card--total">
-        <span class="sum-label">累计总计({{ activeBook?.name }})</span>
+        <span class="sum-label">{{ range === 'year' ? '本年累计' : '本期结余' }}({{ activeBook?.name }})</span>
         <span class="stat-num num tt-num">
           <span class="tt-part">收 <b class="money-in">¥{{ bookTotal.income.toLocaleString(undefined, { maximumFractionDigits: 0 }) }}</b></span>
           <span class="tt-part">支 <b class="money-out">¥{{ bookTotal.expense.toLocaleString(undefined, { maximumFractionDigits: 0 }) }}</b></span>

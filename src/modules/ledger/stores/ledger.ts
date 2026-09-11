@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, reactive } from 'vue'
 import { ledgerApi } from '@/shared/api'
 import type { LedgerReportDto, TransactionDto } from '@/shared/api'
 import type { Book, Category, Transaction, TxType } from '../types'
@@ -31,13 +31,12 @@ export const useLedgerStore = defineStore('ledger', () => {
     if (loaded.value || loading.value) return
     loading.value = true
     try {
-      const [bookList, expenseCats, incomeCats] = await Promise.all([
+      const [bookList, cats] = await Promise.all([
         ledgerApi.listBooks(),
-        ledgerApi.listCategories('expense'),
-        ledgerApi.listCategories('income'),
+        ledgerApi.listCategories() as Promise<{ expense: Category[]; income: Category[] }>,
       ])
       books.value = bookList
-      categories.value = { expense: expenseCats, income: incomeCats }
+      categories.value = cats
       /* 当前账本:优先默认账本,否则第一本 */
       if (!currentBookId.value || !bookList.some((b) => b.id === currentBookId.value)) {
         currentBookId.value = bookList.find((b) => b.isDefault)?.id || bookList[0]?.id || ''
@@ -51,10 +50,25 @@ export const useLedgerStore = defineStore('ledger', () => {
   /** 当前流水列表所处的月份视图('' = 无月份过滤的全量分页) */
   const monthQuery = ref('')
 
+  /** 筛选条件(type/categoryId/keyword,服务端过滤;'' 表示不过滤) */
+  const filters = reactive<{ type: '' | TxType; categoryId: string; keyword: string }>({
+    type: '', categoryId: '', keyword: '',
+  })
+
+  function txFilterParams(): { type?: TxType; categoryId?: string; keyword?: string } {
+    return {
+      ...(filters.type ? { type: filters.type } : {}),
+      ...(filters.categoryId ? { categoryId: filters.categoryId } : {}),
+      ...(filters.keyword.trim() ? { keyword: filters.keyword.trim() } : {}),
+    }
+  }
+
   /** 分页拉取当前账本流水(无月份过滤;page=1 重置,>1 追加) */
   async function loadTransactions(page = 1) {
     if (!currentBookId.value) return
-    const res = await ledgerApi.listTransactions({ bookId: currentBookId.value, page, pageSize: 50 })
+    const res = await ledgerApi.listTransactions({
+      bookId: currentBookId.value, page, pageSize: 50, ...txFilterParams(),
+    })
     txTotal.value = res.total
     monthQuery.value = ''
     if (page === 1) transactions.value = res.items.map(normalizeTx)
@@ -72,6 +86,7 @@ export const useLedgerStore = defineStore('ledger', () => {
     const pad = (n: number) => (n < 10 ? '0' + n : '' + n)
     const res = await ledgerApi.listTransactions({
       bookId: currentBookId.value, from: `${ym}-01`, to: `${ym}-${pad(lastDay)}`, page, pageSize: 50,
+      ...txFilterParams(),
     })
     txTotal.value = res.total
     monthQuery.value = ym
@@ -164,7 +179,7 @@ export const useLedgerStore = defineStore('ledger', () => {
 
   return {
     transactions, txTotal, hasMore, books, categories, loaded, loading,
-    currentBookId, currentBook, groupedByDay,
+    currentBookId, currentBook, groupedByDay, filters,
     init, loadTransactions, loadMonthTransactions, fetchReports,
     addTransaction, updateTransaction, removeTransaction,
     switchBook, addBook, addCustomCategory, removeCustomCategory,
