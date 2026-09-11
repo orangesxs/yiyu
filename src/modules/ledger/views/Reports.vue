@@ -29,6 +29,8 @@ const range = ref<'week' | 'month' | 'year'>('month')
 const offset = ref(0)
 /* 报表归属账本 */
 const bookId = ref(store.currentBookId)
+/* init 就绪后 currentBookId 从 ''→id,跟进并联动下方 watch 刷新 */
+watch(() => store.currentBookId, (id) => { if (id && !bookId.value) bookId.value = id })
 const bookOptions = computed(() => store.books)
 const activeBook = computed(() => store.books.find((b) => b.id === bookId.value))
 
