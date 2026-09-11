@@ -1,16 +1,23 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { reactive, ref, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { useUserStore } from '@/shared/stores/user'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 const formRef = ref<FormInstance>()
 const loading = ref(false)
 
 const form = reactive({ username: '', nickname: '', password: '', confirm: '', inviteCode: '' })
+
+/* 邀请链接直达:注册页支持 ?code=XXXX 预填邀请码 */
+onMounted(() => {
+  const code = typeof route.query.code === 'string' ? route.query.code.trim() : ''
+  if (code) form.inviteCode = code
+})
 
 function validateConfirm(_rule: unknown, value: string, callback: (err?: Error) => void) {
   if (value !== form.password) callback(new Error('两次输入的密码不一致'))

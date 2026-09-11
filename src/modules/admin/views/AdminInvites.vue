@@ -46,6 +46,15 @@ function copyCode(code: string) {
     () => ElMessage.warning('复制失败,请手动选择复制'),
   )
 }
+
+/** 邀请链接:hash 路由,形如 https://host/#/auth/register?code=XXXX */
+function copyLink(code: string) {
+  const link = `${location.origin}${location.pathname}#/auth/register?code=${code}`
+  navigator.clipboard.writeText(link).then(
+    () => ElMessage.success('邀请链接已复制'),
+    () => ElMessage.warning('复制失败,请手动选择复制'),
+  )
+}
 </script>
 
 <template>
@@ -81,6 +90,7 @@ function copyCode(code: string) {
           <template v-else>未使用</template>
         </span>
         <span class="time num">{{ i.createdAt }}</span>
+        <button v-if="!i.usedAt" class="copy" type="button" @click="copyLink(i.code)">复制链接</button>
         <button class="copy" type="button" @click="copyCode(i.code)">复制</button>
       </div>
 

@@ -133,6 +133,16 @@ function copyCode(code: string) {
     () => ElMessage.warning('复制失败,请手动选择复制'),
   )
 }
+/** 邀请链接:hash 路由,形如 https://host/#/auth/register?code=XXXX */
+function inviteLink(code: string) {
+  return `${location.origin}${location.pathname}#/auth/register?code=${code}`
+}
+function copyLink(code: string) {
+  navigator.clipboard.writeText(inviteLink(code)).then(
+    () => ElMessage.success('邀请链接已复制,发给朋友即可注册'),
+    () => ElMessage.warning('复制失败,请手动选择复制'),
+  )
+}
 </script>
 
 <template>
@@ -231,6 +241,7 @@ function copyCode(code: string) {
                 <template v-if="i.usedAt">已被 {{ i.usedBy?.nickname || '某位朋友' }} 使用</template>
                 <template v-else>未使用</template>
               </span>
+              <button v-if="!i.usedAt" class="invite-copy" type="button" @click="copyLink(i.code)">复制链接</button>
               <button class="invite-copy" type="button" @click="copyCode(i.code)">复制</button>
             </div>
           </div>
@@ -373,6 +384,7 @@ function copyCode(code: string) {
   transition: all var(--dur-base) ease;
 }
 .invite-copy:hover { color: var(--color-primary); border-color: var(--color-primary); }
+.invite-copy + .invite-copy { margin-left: -4px; }
 .invite-empty {
   font-size: var(--fs-caption);
   color: var(--text-secondary);
